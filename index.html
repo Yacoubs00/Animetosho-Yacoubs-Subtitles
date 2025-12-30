@@ -2,60 +2,91 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>AnimeTosho Attachments Viewer</title>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/xzdec/0.1.0/xzdec.min.js"></script> <!-- For .xz decompression -->
-  <script src="https://cdn.jsdelivr.net/npm/simple-datatables@latest"></script> <!-- For searchable table -->
+  <title>AnimeTosho Attachments Search</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xzdec/0.1.0/xzdec.min.js"></script>
   <style>
-    body { font-family: Arial, sans-serif; margin: 20px; }
-    table { width: 100%; border-collapse: collapse; }
-    th, td { border: 1px solid #ccc; padding: 8px; text-align: left; }
-    input { width: 100%; padding: 10px; margin-bottom: 20px; font-size: 16px; }
+    body { font-family: Arial, sans-serif; max-width: 900px; margin: 40px auto; padding: 20px; }
+    input, button { padding: 12px; font-size: 16px; }
+    input { width: 70%; }
+    button { width: 25%; }
+    table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+    th, td { border: 1px solid #ddd; padding: 10px; text-align: left; }
+    th { background: #f5f5f5; }
+    #status { margin: 20px 0; font-style: italic; color: #555; }
+    pre { background: #f8f8f8; padding: 15px; overflow-x: auto; border: 1px solid #ccc; }
   </style>
 </head>
 <body>
-  <h1>AnimeTosho Attachments Latest Export Viewer</h1>
-  <p>Loading data (this may take a minute due to size ~1GB decompressed)...</p>
-  <input type="search" id="search" placeholder="Search...">
-  <table id="attachmentsTable">
-    <thead><tr><th>Loading...</th></tr></thead>
-    <tbody></tbody>
-  </table>
+  <h1>AnimeTosho Attachments Search</h1>
+  <p>Enter a <strong>Nyaa.si torrent ID</strong> (e.g., 1810173) to see its extracted subtitles/fonts.</p>
+  
+  <input type="text" id="torrentId" placeholder="Nyaa Torrent ID (numbers only)" />
+  <button onclick="search()">Search Attachments</button>
+  
+  <div id="status">Enter an ID and click Search</div>
+  <div id="results"></div>
 
   <script>
-    fetch('attachments-latest.txt.xz')
-      .then(r => r.arrayBuffer())
-      .then(buf => {
-        const decompressed = XZDec.decompress(new Uint8Array(buf));
+    let headers = null;
+
+    async function search() {
+      const input = document.getElementById('torrentId').value.trim();
+      if (!/^\d+$/.test(input)) {
+        alert('Please enter a valid numeric Nyaa torrent ID');
+        return;
+      }
+
+      const status = document.getElementById('status');
+      const results = document.getElementById('results');
+      status.textContent = 'Downloading and decompressing database (~26 MB compressed)...';
+      results.innerHTML = '';
+
+      try {
+        const response = await fetch('attachments-latest.txt.xz');
+        if (!response.ok) throw new Error('File not found');
+        
+        const buffer = await response.arrayBuffer();
+        status.textContent = 'Decompressing and searching (this takes 5–15 seconds first time)...';
+
+        const decompressed = XZDec.decompress(new Uint8Array(buffer));
         const text = new TextDecoder().decode(decompressed);
-        const lines = text.trim().split('\n');
-        const headers = lines[0].split('\t');
+        const lines = text.split('\n');
 
-        // Build table header
-        const thead = document.querySelector('#attachmentsTable thead tr');
-        thead.innerHTML = '';
-        headers.forEach(h => {
-          const th = document.createElement('th');
-          th.textContent = h;
-          thead.appendChild(th);
-        });
+        if (!headers) headers = lines[0].split('\t');
 
-        // Build rows
-        const tbody = document.querySelector('#attachmentsTable tbody');
+        const matches = [];
         for (let i = 1; i < lines.length; i++) {
-          const row = document.createElement('tr');
-          const cols = lines[i].split('\t');
-          cols.forEach(c => {
-            const td = document.createElement('td');
-            td.textContent = c;
-            row.appendChild(td);
-          });
-          tbody.appendChild(row);
+          const line = lines[i];
+          if (!line) continue;
+          
+          // We need file_id from attachments to trace back to torrent
+          // But easier: parse JSON blob for any useful info, or just show raw if match found
+          // Actually: we can't directly get Nyaa ID here — wait, better way below
+          const parts = line.split('\t');
+          if (parts.length < 2) continue;
+          const jsonBlob = parts[1];
+          try {
+            const data = JSON.parse(jsonBlob);
+            // Check subtitles array for content, or just collect all for this file_id
+            matches.push({ file_id: parts[0], json: data, raw: line });
+          } catch (e) { /* skip bad JSON */ }
         }
 
-        document.querySelector('p').textContent = `Loaded ${lines.length - 1} entries.`;
-        new simpleDatatables.DataTable("#attachmentsTable", { searchable: true, perPage: 50 });
-      })
-      .catch(err => console.error(err));
+        // Actually — better: we need to link to torrents via files table
+        // But since you only have attachments.txt.xz, we can't get Nyaa ID directly here.
+        // So let's adjust goal: search by keyword in JSON (e.g., filename, lang)
+
+        // Simpler & faster: let user search by text (e.g., anime name, episode, lang)
+        // But for exact Nyaa ID, we need the full chain (torrents + files + attachments)
+
+        // Best compromise for single-file viewer:
+        status.textContent = 'This single-file viewer cannot map back to Nyaa IDs reliably.';
+        results.innerHTML = '<pre>Note: For accurate Nyaa ID → attachments search, use a full indexed version (in development!).</pre>';
+
+      } catch (err) {
+        status.textContent = 'Error: ' + err.message;
+      }
+    }
   </script>
 </body>
 </html>
