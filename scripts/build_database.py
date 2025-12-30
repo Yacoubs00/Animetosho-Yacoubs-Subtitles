@@ -129,11 +129,22 @@ def build():
         'bad_json_skipped': bad_json_count
     }
 
-    # Save
+    # Save as compact JSON + gzip (lower RAM)
     os.makedirs('../data', exist_ok=True)
-    with gzip.open('../data/optimized_db.pkl.gz', 'wb') as f:
-        pickle.dump(db, f)
 
+    # Compact JSON (no whitespace)
+    temp_json = '../data/optimized_db_temp.json'
+    with open(temp_json, 'w', encoding='utf-8') as f:
+        json.dump(db, f, separators=(',', ':'))  # Minimal size
+
+    # Gzip it
+    with open(temp_json, 'rb') as f_in:
+        with gzip.open('../data/optimized_db.json.gz', 'wb') as f_out:
+            f_out.writelines(f_in)
+
+    os.remove(temp_json)  # Clean up
+
+    # Keep metadata and language_stats as JSON (already are)
     with open('../data/metadata.json', 'w') as f:
         json.dump(db['stats'], f, indent=2)
 
@@ -141,11 +152,4 @@ def build():
         sorted_stats = sorted(lang_stats.items(), key=lambda x: -x[1])
         json.dump({LANGUAGE_NAMES.get(k, k): v for k, v in sorted_stats}, f, indent=2)
 
-    print(f"\nBUILD SUCCESSFUL!")
-    print(f"→ {len(db['torrents'])} torrents with subtitles")
-    print(f"→ {subtitle_count} subtitle tracks")
-    print(f"→ {len(db['languages'])} languages")
-    print(f"→ Files created in ../data/")
-
-if __name__ == '__main__':
-    build()
+    print(f"JSON build complete! File: optimized_db.json.gz (~{os.path.getsize('../data/optimized_db.json.gz') // 1024 // 1024} MB compressed)")
