@@ -2,8 +2,8 @@
 import os
 import json
 import gzip
-import pickle  # <-- Added!
-from datetime import datetime
+import pickle  # <-- Critical import added
+from datetime import datetime, UTC
 from collections import defaultdict
 
 LANGUAGE_NAMES = {
@@ -14,20 +14,22 @@ LANGUAGE_NAMES = {
 
 def build():
     print("Starting optimized subtitles database build...")
+    print("Files in current directory:", os.listdir('.'))
 
     torrents = {}
     files = {}
     db = {'torrents': {}, 'languages': defaultdict(list), 'stats': {}}
 
     # Load torrents
-    print("Loading torrents-latest.txt")
+    print("\n=== Loading torrents-latest.txt ===")
     with open('torrents-latest.txt', encoding='utf-8') as f:
         header = next(f).strip().split('\t')
+        print("Header sample:", ' | '.join(header[:10]) + '...' if len(header) > 10 else header)
         tid_idx = header.index('id') if 'id' in header else 0
-        name_idx = header.index('name') if 'name' in header else 4  # 'name' is column 4
+        name_idx = header.index('name') if 'name' in header else 4
         print(f"Using torrent_id index: {tid_idx}, name index: {name_idx}")
 
-        for line in f:
+        for line_num, line in enumerate(f, start=2):
             parts = line.strip().split('\t')
             if len(parts) <= max(tid_idx, name_idx):
                 continue
@@ -35,8 +37,10 @@ def build():
             name = parts[name_idx]
             torrents[tid] = {'name': name}
 
+    print(f"Loaded {len(torrents)} torrents")
+
     # Load files
-    print("Loading files-latest.txt")
+    print("\n=== Loading files-latest.txt ===")
     with open('files-latest.txt', encoding='utf-8') as f:
         header = next(f).strip().split('\t')
         fid_idx = 0
@@ -49,25 +53,27 @@ def build():
             fid = parts[fid_idx]
             files[fid] = {'torrent_id': parts[tid_idx], 'filename': parts[fname_idx]}
 
-    # Load attachments — skip bad JSON
-    print("Loading attachments-latest.txt (skipping invalid JSON)")
+    print(f"Loaded {len(files)} files")
+
+    # Load attachments
+    print("\n=== Loading attachments-latest.txt ===")
     subtitle_count = 0
     lang_stats = defaultdict(int)
-    bad_lines = 0
+    bad_json_count = 0
     with open('attachments-latest.txt', encoding='utf-8') as f:
-        for line_num, line in enumerate(f, 1):
+        for line_num, line in enumerate(f, start=1):
             parts = line.strip().split('\t', 1)
             if len(parts) != 2:
                 continue
             file_id, json_blob = parts
-            if not json_blob.strip():  # Skip empty
+            if not json_blob.strip():
                 continue
             try:
                 data = json.loads(json_blob)
-            except json.JSONDecodeError:
-                bad_lines += 1
-                if bad_lines < 10:
-                    print(f"Bad JSON on line {line_num}")
+            except json.JSONDecodeError as e:
+                bad_json_count += 1
+                if bad_json_count <= 5:
+                    print(f"Bad JSON line {line_num}: {e}")
                 continue
 
             subs_array = data[1] if isinstance(data, list) and len(data) >= 2 else None
@@ -91,16 +97,20 @@ def build():
                     continue
                 lang = sub.get('lang', 'und')
                 afid = sub.get('_afid')
-                if afid:
-                    hex_afid = f"{afid:08x}"
+                if afid is not None:
+                    hex_afid = f"{int(afid):08x}"
                     url = f"https://storage.animetosho.org/attach/{hex_afid}/file.xz"
-                    sub_files.append({'lang': lang, 'afid': afid, 'url': url})
+                    sub_files.append({
+                        'lang': lang,
+                        'afid': afid,
+                        'url': url
+                    })
                     db['torrents'][torrent_id]['languages'].add(lang)
                     db['languages'][lang].append(torrent_id)
                     lang_stats[lang] += 1
                     subtitle_count += 1
 
-            if sub_files:  # Only append if has subs
+            if sub_files:
                 db['torrents'][torrent_id]['subtitle_files'].append({
                     'file_id': file_id,
                     'filename': files.get(file_id, {}).get('filename', ''),
@@ -112,12 +122,14 @@ def build():
         t['languages'] = sorted(t['languages'])
 
     db['stats'] = {
-        'last_updated': datetime.now(datetime.UTC).isoformat() + 'Z',  # Fixed deprecation
+        'last_updated': datetime.now(UTC).isoformat() + 'Z',
         'torrent_count': len(db['torrents']),
         'subtitle_tracks': subtitle_count,
-        'language_count': len(db['languages'])
+        'language_count': len(db['languages']),
+        'bad_json_skipped': bad_json_count
     }
 
+    # Save
     os.makedirs('../data', exist_ok=True)
     with gzip.open('../data/optimized_db.pkl.gz', 'wb') as f:
         pickle.dump(db, f)
@@ -129,8 +141,11 @@ def build():
         sorted_stats = sorted(lang_stats.items(), key=lambda x: -x[1])
         json.dump({LANGUAGE_NAMES.get(k, k): v for k, v in sorted_stats}, f, indent=2)
 
-    print(f"Build complete! {len(db['torrents'])} torrents with subtitles, {subtitle_count} tracks")
-    print(f"Skipped {bad_lines} bad JSON lines")
+    print(f"\nBUILD SUCCESSFUL!")
+    print(f"→ {len(db['torrents'])} torrents with subtitles")
+    print(f"→ {subtitle_count} subtitle tracks")
+    print(f"→ {len(db['languages'])} languages")
+    print(f"→ Files created in ../data/")
 
 if __name__ == '__main__':
     build()
