@@ -26,12 +26,33 @@ jobs:
           wget -q https://storage.animetosho.org/dbexport/attachments-latest.txt.xz
           wget -q https://storage.animetosho.org/dbexport/attachmentfiles-latest.txt.xz
 
-      - name: Decompress & build optimized DB
+      - name: Decompress & build optimized DB with debug
         run: |
           cd raw_db
-          xz -d *.xz
-          python ../scripts/build_database.py   # Script runs from raw_db/, so use relative paths without prefix
-
+          echo "=== Listing downloaded .xz files ==="
+          ls -la *.xz || echo "No .xz files found!"
+          
+          echo "=== Decompressing ==="
+          xz -d *.xz || { echo "Decompression failed!"; exit 1; }
+          
+          echo "=== Decompressed files ==="
+          ls -la
+          
+          echo "=== First line of torrents-latest.txt (header) ==="
+          head -1 torrents-latest.txt
+          
+          echo "=== First line of files-latest.txt ==="
+          head -1 files-latest.txt
+          
+          echo "=== First line of attachments-latest.txt ==="
+          head -1 attachments-latest.txt
+          
+          echo "=== Running build script ==="
+          python ../scripts/build_database.py || { echo "Build script FAILED — check error above"; exit 1; }
+          
+          echo "=== Build success! data/ contents ==="
+          ls -la ../data/
+          
       - name: Cleanup raw files
         if: always()
         run: rm -rf raw_db
