@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>AnimeTosho Fast Subtitle Search</title>
+  <script src="https://cdn.jsdelivr.net/npm/picklejs@1.0.2/dist/pickle.min.js"></script>
+  <link rel="stylesheet" href="web/style.css"> <!-- Optional -->
+</head>
+<body>
+  <h1>AnimeTosho Fast Subtitle Search</h1>
+  <p>Daily updated • Search by name, Nyaa ID, language • Direct downloads</p>
+
+  <input type="text" id="query" placeholder="Anime name or Nyaa torrent ID">
+  <select id="lang"><option value="">All Languages</option></select>
+  <button onclick="search()">Search</button>
+
+  <div id="status">Loading database...</div>
+  <div id="results"></div>
+
+  <script>
+    let db = null;
+    async function loadDB() {
+      if (db) return;
+      const resp = await fetch('data/optimized_db.pkl.gz');
+      const buf = await resp.arrayBuffer();
+      db = await Pickle.load(buf);
+      const select = document.getElementById('lang');
+      Object.keys(db.languages).sort().forEach(l => {
+        const opt = document.createElement('option');
+        opt.value = l;
+        opt.text = `${l.toUpperCase()} (${db.languages[l].length})`;
+        select.appendChild(opt);
+      });
+      document.getElementById('status').textContent = 'Ready!';
+    }
+
+    async function search() {
+      await loadDB();
+      const q = document.getElementById('query').value.toLowerCase();
+      const lang = document.getElementById('lang').value;
+      const results = [];
+
+      for (const [tid, data] of Object.entries(db.torrents)) {
+        if (q && !tid.includes(q) && !data.name.toLowerCase().includes(q)) continue;
+        if (lang && !data.languages.includes(lang)) continue;
+        results.push({tid, ...data});
+      }
+
+      display(results.slice(0, 50)); // Limit for speed
+    }
+
+    function display(results) {
+      const div = document.getElementById('results');
+      if (!results.length) {
+        div.innerHTML = '<p>No results</p>';
+        return;
+      }
+      let html = `<p>${results.length} torrents found</p><table><tr><th>ID</th><th>Name</th><th>Languages</th><th>Downloads</th></tr>`;
+      results.forEach(r => {
+        html += `<tr><td>${r.tid}</td><td>${r.name}</td><td>${r.languages.join(', ')}</td><td>`;
+        r.subtitle_files.forEach(sf => {
+          sf.subs.forEach(s => html += `<a href="${s.url}" target="_blank">${s.lang.toUpperCase()}</a> `);
+        });
+        html += '</td></tr>';
+      });
+      html += '</table>';
+      div.innerHTML = html;
+    }
+
+    loadDB();
+  </script>
+</body>
+</html>
