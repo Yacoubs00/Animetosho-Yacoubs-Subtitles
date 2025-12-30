@@ -30,7 +30,8 @@ jobs:
         run: |
           cd raw_db
           xz -d *.xz
-          python ../scripts/build_database.py
+          cd ..
+          python scripts/build_database.py
 
       - name: Cleanup raw files
         if: always()
