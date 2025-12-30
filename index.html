@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>AnimeTosho Attachments Viewer</title>
+  <style>body {font-family: monospace;} #search {width: 100%; padding: 10px;}</style>
+</head>
+<body>
+  <input type="text" id="search" placeholder="Search (Ctrl+F works too)" onkeyup="searchLines()">
+  <pre id="content"></pre>
+  <script>
+    fetch('attachments-latest.txt')
+      .then(r => r.text())
+      .then(text => {
+        document.getElementById('content').textContent = text;
+      });
+    function searchLines() {
+      let input = document.getElementById('search').value.toLowerCase();
+      let lines = document.getElementById('content').textContent.split('\n');
+      let filtered = lines.filter(line => line.toLowerCase().includes(input));
+      document.getElementById('content').textContent = filtered.join('\n');
+    }
+  </script>
+</body>
+</html>
