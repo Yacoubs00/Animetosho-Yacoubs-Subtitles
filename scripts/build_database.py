@@ -19,8 +19,8 @@ def build():
     files = {}     # file_id → {'torrent_id': int, 'filename': str}
     db = {'torrents': {}, 'languages': defaultdict(list), 'stats': {}}
 
-    # Load torrents
-    with open('raw_db/torrents-latest.txt', encoding='utf-8') as f:
+    # Load torrents - files are now in current directory
+    with open('torrents-latest.txt', encoding='utf-8') as f:
         header = next(f).strip().split('\t')
         tid_idx = header.index('id') if 'id' in header else 0
         name_idx = header.index('title') if 'title' in header else 4
@@ -31,7 +31,7 @@ def build():
                 torrents[tid] = {'name': parts[name_idx]}
 
     # Load files
-    with open('raw_db/files-latest.txt', encoding='utf-8') as f:
+    with open('files-latest.txt', encoding='utf-8') as f:
         header = next(f).strip().split('\t')
         fid_idx, tid_idx, fname_idx = 0, 1, 3
         for line in f:
@@ -43,7 +43,7 @@ def build():
     # Load attachments & filter subtitles
     subtitle_count = 0
     lang_stats = defaultdict(int)
-    with open('raw_db/attachments-latest.txt', encoding='utf-8') as f:
+    with open('attachments-latest.txt', encoding='utf-8') as f:
         for line in f:
             parts = line.strip().split('\t', 1)
             if len(parts) != 2: continue
