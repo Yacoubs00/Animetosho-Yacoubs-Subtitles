@@ -2,155 +2,288 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>AnimeTosho Fast Subtitle Search</title>
-  <meta name="description" content="Ultra-fast daily-updated search for AnimeTosho extracted subtitles with direct downloads">
+  <meta name="description" content="Ultra-fast daily-updated search for AnimeTosho extracted subtitles & fonts with direct download links">
   <script src="https://cdn.jsdelivr.net/npm/picklejs@1.0.2/dist/pickle.min.js"></script>
-  <link rel="stylesheet" href="style.css">
   <style>
-    body { font-family: Arial, sans-serif; max-width: 1100px; margin: 40px auto; padding: 20px; line-height: 1.6; }
-    h1 { text-align: center; }
-    #controls { display: flex; gap: 10px; flex-wrap: wrap; margin: 20px 0; align-items: center; }
-    input, select, button { padding: 12px; font-size: 16px; }
-    input { flex: 1; min-width: 300px; }
-    select { width: 200px; }
-    button { cursor: pointer; background: #007bff; color: white; border: none; border-radius: 4px; }
-    button:hover { background: #0056b3; }
-    #status { padding: 15px; background: #f8f9fa; border: 1px solid #dee2e6; border-radius: 4px; margin: 20px 0; font-weight: bold; }
-    table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-    th, td { border: 1px solid #ddd; padding: 10px; text-align: left; }
-    th { background: #f0f0f0; }
-    a { color: #007bff; text-decoration: none; margin-right: 8px; }
-    a:hover { text-decoration: underline; }
-    .retry { background: #dc3545; }
-    .retry:hover { background: #c82333; }
+    :root {
+      --primary: #0066cc;
+      --success: #28a745;
+      --danger: #dc3545;
+      --gray: #f8f9fa;
+      --text: #333;
+    }
+    body {
+      font-family: 'Segoe UI', Arial, sans-serif;
+      max-width: 1200px;
+      margin: 40px auto;
+      padding: 20px;
+      line-height: 1.6;
+      color: var(--text);
+      background: #fff;
+    }
+    h1 {
+      text-align: center;
+      color: var(--primary);
+    }
+    p.subtitle {
+      text-align: center;
+      font-size: 1.1em;
+      color: #555;
+      margin-bottom: 30px;
+    }
+    #controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin: 30px 0;
+      align-items: center;
+      justify-content: center;
+    }
+    input[type="text"] {
+      flex: 1;
+      min-width: 300px;
+      padding: 14px;
+      font-size: 16px;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+    }
+    select {
+      padding: 14px;
+      font-size: 16px;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+      min-width: 200px;
+    }
+    button {
+      padding: 14px 24px;
+      font-size: 16px;
+      background: var(--primary);
+      color: white;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+    button:hover {
+      background: #0052a3;
+    }
+    #status {
+      padding: 20px;
+      background: var(--gray);
+      border-radius: 8px;
+      margin: 20px 0;
+      text-align: center;
+      font-size: 1.1em;
+      font-weight: bold;
+    }
+    .error {
+      background: #f8d7da;
+      color: var(--danger);
+      border: 1px solid #f5c6cb;
+    }
+    .success {
+      background: #d4edda;
+      color: var(--success);
+      border: 1px solid #c3e6cb;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 20px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+    th, td {
+      padding: 12px;
+      text-align: left;
+      border-bottom: 1px solid #ddd;
+    }
+    th {
+      background: #f0f0f0;
+      font-weight: 600;
+    }
+    tr:hover {
+      background: #f5f5f5;
+    }
+    a {
+      color: var(--primary);
+      text-decoration: none;
+      font-weight: 500;
+    }
+    a:hover {
+      text-decoration: underline;
+    }
+    .lang-badge {
+      display: inline-block;
+      background: var(--primary);
+      color: white;
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-size: 0.9em;
+      margin: 2px;
+    }
+    .retry-btn {
+      background: var(--danger);
+      margin-top: 10px;
+    }
+    .retry-btn:hover {
+      background: #c82333;
+    }
+    @media (max-width: 768px) {
+      #controls {
+        flex-direction: column;
+      }
+      input[type="text"], select {
+        width: 100%;
+      }
+    }
   </style>
 </head>
 <body>
   <h1>AnimeTosho Fast Subtitle Search</h1>
-  <p style="text-align:center;">Daily updated • Search by anime name, Nyaa ID, or language • Direct subtitle downloads</p>
+  <p class="subtitle">Daily updated • Search by anime name, Nyaa ID, or language • Direct subtitle & font downloads</p>
 
   <div id="controls">
     <input type="text" id="query" placeholder="Anime name or Nyaa torrent ID (e.g. 1810173)">
     <select id="lang">
       <option value="">All Languages</option>
     </select>
-    <button onclick="search()">Search</button>
+    <button onclick="performSearch()">Search</button>
   </div>
 
-  <div id="status">Loading database (optimized_db.pkl.gz ~50MB)... This may take 10–30 seconds on first visit.</div>
+  <div id="status">Loading database (~50MB compressed)... First load takes 10–40 seconds. Please wait.</div>
   <div id="results"></div>
 
   <script>
     let db = null;
+    let loading = false;
 
-    async function loadDB() {
-      if (db) return true;
+    async function loadDatabase() {
+      if (db || loading) return db;
+      loading = true;
 
       const status = document.getElementById('status');
-      status.innerHTML = `Downloading database... <em>(~50MB compressed, please wait)</em>`;
+      status.innerHTML = `Downloading database... <em>(~50MB, please be patient)</em>`;
 
       try {
-        // Cache-buster to avoid stale CDN issues
-        const url = `data/optimized_db.pkl.gz?t=${Date.now()}`;
-        const resp = await fetch(url);
+        // Cache-buster + fresh fetch
+        const url = `data/optimized_db.pkl.gz?v=${Date.now()}`;
+        const response = await fetch(url);
 
-        if (!resp.ok) {
-          throw new Error(`HTTP ${resp.status} – ${resp.statusText || 'Unknown error'}`);
+        if (!response.ok) {
+          throw new Error(`Failed to download: ${response.status} ${response.statusText}`);
         }
 
-        status.textContent = 'Download complete. Decompressing and parsing...';
+        status.textContent = 'Download complete! Decompressing and parsing database...';
 
-        const arrayBuffer = await resp.arrayBuffer();
-        db = await Pickle.load(arrayBuffer);
+        const buffer = await response.arrayBuffer();
+        db = await Pickle.load(buffer);
 
         // Populate language dropdown
-        const select = document.getElementById('lang');
+        const langSelect = document.getElementById('lang');
         Object.keys(db.languages)
           .sort()
           .forEach(code => {
             const count = db.languages[code].length;
-            const name = code.toUpperCase();
-            const opt = document.createElement('option');
-            opt.value = code;
-            opt.textContent = `${name} (${count})`;
-            select.appendChild(opt);
+            const option = document.createElement('option');
+            option.value = code;
+            option.textContent = `${code.toUpperCase()} (${count.toLocaleString()})`;
+            langSelect.appendChild(option);
           });
 
-        status.innerHTML = `<strong style="color:green;">✓ Ready! Database loaded (${Object.keys(db.torrents).length} torrents with subtitles)</strong>`;
-        return true;
+        status.className = 'success';
+        status.innerHTML = `<strong>✓ Database loaded successfully!</strong><br>
+                            ${Object.keys(db.torrents).length.toLocaleString()} torrents with subtitles ready for search.`;
 
-      } catch (err) {
-        console.error('Load failed:', err);
+        loading = false;
+        return db;
+
+      } catch (error) {
+        console.error('Database load failed:', error);
+        status.className = 'error';
         status.innerHTML = `
-          <strong style="color:red;">✗ Failed to load database:</strong> ${err.message}<br><br>
-          This can happen due to temporary GitHub CDN issues.<br><br>
-          <button class="retry" onclick="location.reload()">Retry (Refresh Page)</button>
+          <strong>✗ Failed to load database:</strong><br>
+          ${error.message}<br><br>
+          This is usually a temporary GitHub CDN issue.<br><br>
+          <button class="retry-btn" onclick="location.reload()">Retry (Refresh Page)</button>
         `;
-        return false;
+        loading = false;
+        return null;
       }
     }
 
-    async function search() {
-      const loaded = await loadDB();
-      if (!loaded) return;
+    async function performSearch() {
+      const database = await loadDatabase();
+      if (!database) return;
 
       const query = document.getElementById('query').value.trim().toLowerCase();
-      const langFilter = document.getElementById('lang').value;
+      const selectedLang = document.getElementById('lang').value;
 
       const results = [];
 
-      for (const [tid, info] of Object.entries(db.torrents)) {
-        const nameMatch = info.name.toLowerCase().includes(query);
-        const idMatch = tid.includes(query);
-        if (query && !(nameMatch || idMatch)) continue;
-        if (langFilter && !info.languages.includes(langFilter)) continue;
+      for (const [nyaaId, torrent] of Object.entries(database.torrents)) {
+        const nameMatch = torrent.name.toLowerCase().includes(query);
+        const idMatch = nyaaId.includes(query);
 
-        results.push({ tid, ...info });
+        if (query && !(nameMatch || idMatch)) continue;
+        if (selectedLang && !torrent.languages.includes(selectedLang)) continue;
+
+        results.push({ nyaaId, ...torrent });
       }
 
-      displayResults(results.slice(0, 100)); // Show top 100
+      displayResults(results.slice(0, 100)); // Top 100 results
     }
 
     function displayResults(results) {
-      const div = document.getElementById('results');
+      const container = document.getElementById('results');
 
       if (results.length === 0) {
-        div.innerHTML = '<p>No matching torrents found.</p>';
+        container.innerHTML = '<p style="text-align:center; padding:40px;">No torrents found matching your search.</p>';
         return;
       }
 
-      let html = `<p><strong>${results.length.toLocaleString()} torrent(s) found with subtitles</strong></p>`;
+      let html = `<p style="font-weight:bold; text-align:center; margin:30px 0;">
+                    Found ${results.length.toLocaleString()} torrent(s) with extracted subtitles
+                  </p>`;
+
       html += `<table>
-        <thead><tr>
-          <th>Nyaa ID</th>
-          <th>Torrent Name</th>
-          <th>Languages</th>
-          <th>Subtitle Downloads</th>
-        </tr></thead><tbody>`;
+        <thead>
+          <tr>
+            <th>Nyaa ID</th>
+            <th>Torrent Name</th>
+            <th>Languages</th>
+            <th>Subtitle Downloads</th>
+            <th>Full Pack</th>
+          </tr>
+        </thead>
+        <tbody>`;
 
       results.forEach(t => {
+        const nyaaLink = `https://nyaa.si/view/${t.nyaaId}`;
+        const packName = encodeURIComponent(t.name);
+        const packLink = `https://animetosho.org/storage/torattachpk/${t.nyaaId}/${packName}_attachments.7z`;
+
         html += `<tr>
-          <td><a href="https://nyaa.si/view/${t.tid}" target="_blank">${t.tid}</a></td>
+          <td><a href="${nyaaLink}" target="_blank">${t.nyaaId}</a></td>
           <td>${escapeHtml(t.name)}</td>
-          <td>${t.languages.map(l => l.toUpperCase()).join(', ')}</td>
+          <td>${t.languages.map(l => `<span class="lang-badge">${l.toUpperCase()}</span>`).join(' ')}</td>
           <td>`;
 
+        const allSubs = [];
         t.subtitle_files.forEach(sf => {
-          sf.subs.forEach(s => {
-            html += `<a href="${s.url}" target="_blank" title="${sf.filename}">${s.lang.toUpperCase()}</a> `;
+          sf.subs.forEach(sub => {
+            allSubs.push(`<a href="${sub.url}" target="_blank">${sub.lang.toUpperCase()}</a>`);
           });
         });
+        html += allSubs.join(', ') || '—';
 
-        // Optional: full attachment pack link
-        const packName = encodeURIComponent(t.name);
-        const packUrl = `https://animetosho.org/storage/torattachpk/${t.tid}/${packName}_attachments.7z`;
-        html += `<br><small><a href="${packUrl}" target="_blank">Full Pack (7z)</a></small>`;
-
-        html += `</td></tr>`;
+        html += `</td>
+          <td><a href="${packLink}" target="_blank">Download 7z</a></td>
+        </tr>`;
       });
 
       html += `</tbody></table>`;
-      div.innerHTML = html;
+      container.innerHTML = html;
     }
 
     function escapeHtml(text) {
@@ -159,8 +292,8 @@
       return div.innerHTML;
     }
 
-    // Start loading on page load
-    loadDB();
+    // Start loading as soon as page opens
+    loadDatabase();
   </script>
 </body>
 </html>
