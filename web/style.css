@@ -1,0 +1,181 @@
+/* style.css - Dark Theme for AnimeTosho Fast Subtitle Search */
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  background-color: #0d1117;
+  color: #c9d1d9;
+  margin: 0;
+  padding: 20px;
+  line-height: 1.6;
+}
+
+h1 {
+  text-align: center;
+  color: #58a6ff;
+  margin-bottom: 10px;
+  font-size: 2.4rem;
+  text-shadow: 0 0 8px rgba(88, 166, 255, 0.3);
+}
+
+p {
+  text-align: center;
+  color: #8b949e;
+  font-size: 1.1rem;
+  margin-bottom: 30px;
+}
+
+/* Search bar container */
+#filters, .search-container {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  justify-content: center;
+  margin-bottom: 30px;
+  padding: 20px;
+  background-color: #161b22;
+  border-radius: 12px;
+  border: 1px solid #30363d;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+input, select, button {
+  padding: 14px 18px;
+  font-size: 1rem;
+  border-radius: 8px;
+  border: 1px solid #30363d;
+  background-color: #0d1117;
+  color: #c9d1d9;
+  transition: all 0.3s ease;
+}
+
+input:focus, select:focus {
+  outline: none;
+  border-color: #58a6ff;
+  box-shadow: 0 0 0 3px rgba(88, 166, 255, 0.2);
+}
+
+button {
+  background-color: #238636;
+  color: white;
+  font-weight: bold;
+  cursor: pointer;
+  min-width: 120px;
+}
+
+button:hover {
+  background-color: #2ea043;
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(46, 160, 67, 0.3);
+}
+
+button:active {
+  transform: translateY(0);
+}
+
+/* Status and results */
+#status {
+  text-align: center;
+  font-size: 1.2rem;
+  margin: 30px 0;
+  color: #f85149;
+  font-weight: 500;
+}
+
+#results {
+  margin-top: 20px;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  background-color: #161b22;
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+
+th, td {
+  padding: 16px;
+  text-align: left;
+  border-bottom: 1px solid #30363d;
+}
+
+th {
+  background-color: #21262d;
+  color: #58a6ff;
+  font-weight: 600;
+  text-transform: uppercase;
+  font-size: 0.9rem;
+  letter-spacing: 0.5px;
+}
+
+tr:hover {
+  background-color: #1f242b;
+  transition: background-color 0.2s;
+}
+
+a {
+  color: #58a6ff;
+  text-decoration: none;
+  font-weight: 500;
+}
+
+a:hover {
+  text-decoration: underline;
+  color: #79c0ff;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  #filters {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  
+  input, select, button {
+    width: 100%;
+  }
+  
+  table, thead, tbody, th, td, tr {
+    display: block;
+  }
+  
+  thead tr {
+    position: absolute;
+    top: -9999px;
+    left: -9999px;
+  }
+  
+  tr {
+    margin-bottom: 20px;
+    border: 1px solid #30363d;
+    border-radius: 8px;
+  }
+  
+  td {
+    border: none;
+    position: relative;
+    padding-left: 50%;
+  }
+  
+  td:before {
+    content: attr(data-label);
+    position: absolute;
+    left: 16px;
+    width: 45%;
+    font-weight: bold;
+    color: #58a6ff;
+  }
+}
+
+/* Footer or extra info */
+footer {
+  text-align: center;
+  margin-top: 60px;
+  color: #8b949e;
+  font-size: 0.9rem;
+}
