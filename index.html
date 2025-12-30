@@ -1,24 +1,61 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
+  <meta charset="UTF-8">
   <title>AnimeTosho Attachments Viewer</title>
-  <style>body {font-family: monospace;} #search {width: 100%; padding: 10px;}</style>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xzdec/0.1.0/xzdec.min.js"></script> <!-- For .xz decompression -->
+  <script src="https://cdn.jsdelivr.net/npm/simple-datatables@latest"></script> <!-- For searchable table -->
+  <style>
+    body { font-family: Arial, sans-serif; margin: 20px; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { border: 1px solid #ccc; padding: 8px; text-align: left; }
+    input { width: 100%; padding: 10px; margin-bottom: 20px; font-size: 16px; }
+  </style>
 </head>
 <body>
-  <input type="text" id="search" placeholder="Search (Ctrl+F works too)" onkeyup="searchLines()">
-  <pre id="content"></pre>
+  <h1>AnimeTosho Attachments Latest Export Viewer</h1>
+  <p>Loading data (this may take a minute due to size ~1GB decompressed)...</p>
+  <input type="search" id="search" placeholder="Search...">
+  <table id="attachmentsTable">
+    <thead><tr><th>Loading...</th></tr></thead>
+    <tbody></tbody>
+  </table>
+
   <script>
-    fetch('attachments-latest.txt')
-      .then(r => r.text())
-      .then(text => {
-        document.getElementById('content').textContent = text;
-      });
-    function searchLines() {
-      let input = document.getElementById('search').value.toLowerCase();
-      let lines = document.getElementById('content').textContent.split('\n');
-      let filtered = lines.filter(line => line.toLowerCase().includes(input));
-      document.getElementById('content').textContent = filtered.join('\n');
-    }
+    fetch('attachments-latest.txt.xz')
+      .then(r => r.arrayBuffer())
+      .then(buf => {
+        const decompressed = XZDec.decompress(new Uint8Array(buf));
+        const text = new TextDecoder().decode(decompressed);
+        const lines = text.trim().split('\n');
+        const headers = lines[0].split('\t');
+
+        // Build table header
+        const thead = document.querySelector('#attachmentsTable thead tr');
+        thead.innerHTML = '';
+        headers.forEach(h => {
+          const th = document.createElement('th');
+          th.textContent = h;
+          thead.appendChild(th);
+        });
+
+        // Build rows
+        const tbody = document.querySelector('#attachmentsTable tbody');
+        for (let i = 1; i < lines.length; i++) {
+          const row = document.createElement('tr');
+          const cols = lines[i].split('\t');
+          cols.forEach(c => {
+            const td = document.createElement('td');
+            td.textContent = c;
+            row.appendChild(td);
+          });
+          tbody.appendChild(row);
+        }
+
+        document.querySelector('p').textContent = `Loaded ${lines.length - 1} entries.`;
+        new simpleDatatables.DataTable("#attachmentsTable", { searchable: true, perPage: 50 });
+      })
+      .catch(err => console.error(err));
   </script>
 </body>
 </html>
