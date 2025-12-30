@@ -2,91 +2,120 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>AnimeTosho Attachments Search</title>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/xzdec/0.1.0/xzdec.min.js"></script>
+  <title>AnimeTosho Subtitles Search (Fast)</title>
+  <script src="https://cdn.jsdelivr.net/npm/picklejs@1.0.2/dist/pickle.min.js"></script> <!-- For pickle loading -->
   <style>
-    body { font-family: Arial, sans-serif; max-width: 900px; margin: 40px auto; padding: 20px; }
-    input, button { padding: 12px; font-size: 16px; }
-    input { width: 70%; }
-    button { width: 25%; }
+    body { font-family: Arial; max-width: 1000px; margin: 40px auto; padding: 20px; }
+    input, select, button { padding: 10px; font-size: 16px; margin: 5px; }
+    #filters { display: flex; flex-wrap: wrap; gap: 10px; }
     table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-    th, td { border: 1px solid #ddd; padding: 10px; text-align: left; }
-    th { background: #f5f5f5; }
-    #status { margin: 20px 0; font-style: italic; color: #555; }
-    pre { background: #f8f8f8; padding: 15px; overflow-x: auto; border: 1px solid #ccc; }
+    th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+    th { background: #f0f0f0; }
+    #status { margin: 20px 0; font-weight: bold; }
+    a { color: blue; }
   </style>
 </head>
 <body>
-  <h1>AnimeTosho Attachments Search</h1>
-  <p>Enter a <strong>Nyaa.si torrent ID</strong> (e.g., 1810173) to see its extracted subtitles/fonts.</p>
-  
-  <input type="text" id="torrentId" placeholder="Nyaa Torrent ID (numbers only)" />
-  <button onclick="search()">Search Attachments</button>
-  
-  <div id="status">Enter an ID and click Search</div>
+  <h1>AnimeTosho Extracted Subtitles/Fonts Search</h1>
+  <p>Daily updated • Search by Nyaa ID, name, language, etc. • Direct download links</p>
+
+  <div id="filters">
+    <input type="text" id="nyaaId" placeholder="Nyaa Torrent ID (e.g., 1810173)" />
+    <input type="text" id="animeName" placeholder="Anime name" />
+    <select id="language">
+      <option value="">All Languages</option>
+      <!-- Filled dynamically -->
+    </select>
+    <input type="text" id="episode" placeholder="Episode (e.g., 13)" />
+    <input type="text" id="group" placeholder="Release group" />
+    <button onclick="search()">Search</button>
+  </div>
+
+  <div id="status">Loading index (first time ~10-20s)...</div>
   <div id="results"></div>
 
   <script>
-    let headers = null;
+    let db = null;
+    let languages = [];
+
+    async function loadIndex() {
+      if (db) return;
+      const status = document.getElementById('status');
+      status.textContent = 'Downloading latest subtitles index (~50-80 MB compressed)...';
+      const resp = await fetch('data/subtitles_index.pkl.gz');
+      const arrayBuffer = await resp.arrayBuffer();
+      status.textContent = 'Decompressing & parsing...';
+      const pickleData = await Pickle.load(arrayBuffer); // picklejs handles gzip
+      db = pickleData;
+      languages = db.all_languages || [];
+      const langSelect = document.getElementById('language');
+      languages.forEach(lang => {
+        const opt = document.createElement('option');
+        opt.value = lang;
+        opt.textContent = lang.toUpperCase();
+        langSelect.appendChild(opt);
+      });
+      status.textContent = 'Index loaded! Ready to search.';
+    }
 
     async function search() {
-      const input = document.getElementById('torrentId').value.trim();
-      if (!/^\d+$/.test(input)) {
-        alert('Please enter a valid numeric Nyaa torrent ID');
+      await loadIndex();
+      const nyaaId = document.getElementById('nyaaId').value.trim();
+      const name = document.getElementById('animeName').value.toLowerCase();
+      const lang = document.getElementById('language').value;
+      const ep = document.getElementById('episode').value.trim();
+      const group = document.getElementById('group').value.toLowerCase();
+
+      const results = [];
+      for (const [file_id, sub_list] of Object.entries(db.subtitles_only)) {
+        const [torrent_id, filename] = db.files[file_id] || ['', ''];
+        const torrent_name = db.torrents[torrent_id] || '';
+
+        if (nyaaId && torrent_id !== nyaaId) continue;
+        if (name && !torrent_name.toLowerCase().includes(name) && !filename.toLowerCase().includes(name)) continue;
+        if (group && !torrent_name.toLowerCase().includes(group)) continue;
+        if (ep && !filename.includes(ep.padStart(2, '0')) && !filename.includes(` ${ep} `)) continue;
+
+        let matched_subs = sub_list;
+        if (lang) matched_subs = sub_list.filter(s => s.lang === lang);
+
+        if (matched_subs.length > 0) {
+          results.push({
+            torrent_id,
+            torrent_name,
+            filename,
+            subs: matched_subs
+          });
+        }
+      }
+
+      displayResults(results);
+    }
+
+    function displayResults(results) {
+      const div = document.getElementById('results');
+      if (results.length === 0) {
+        div.innerHTML = '<p>No matching subtitles/fonts found.</p>';
         return;
       }
 
-      const status = document.getElementById('status');
-      const results = document.getElementById('results');
-      status.textContent = 'Downloading and decompressing database (~26 MB compressed)...';
-      results.innerHTML = '';
-
-      try {
-        const response = await fetch('attachments-latest.txt.xz');
-        if (!response.ok) throw new Error('File not found');
-        
-        const buffer = await response.arrayBuffer();
-        status.textContent = 'Decompressing and searching (this takes 5–15 seconds first time)...';
-
-        const decompressed = XZDec.decompress(new Uint8Array(buffer));
-        const text = new TextDecoder().decode(decompressed);
-        const lines = text.split('\n');
-
-        if (!headers) headers = lines[0].split('\t');
-
-        const matches = [];
-        for (let i = 1; i < lines.length; i++) {
-          const line = lines[i];
-          if (!line) continue;
-          
-          // We need file_id from attachments to trace back to torrent
-          // But easier: parse JSON blob for any useful info, or just show raw if match found
-          // Actually: we can't directly get Nyaa ID here — wait, better way below
-          const parts = line.split('\t');
-          if (parts.length < 2) continue;
-          const jsonBlob = parts[1];
-          try {
-            const data = JSON.parse(jsonBlob);
-            // Check subtitles array for content, or just collect all for this file_id
-            matches.push({ file_id: parts[0], json: data, raw: line });
-          } catch (e) { /* skip bad JSON */ }
-        }
-
-        // Actually — better: we need to link to torrents via files table
-        // But since you only have attachments.txt.xz, we can't get Nyaa ID directly here.
-        // So let's adjust goal: search by keyword in JSON (e.g., filename, lang)
-
-        // Simpler & faster: let user search by text (e.g., anime name, episode, lang)
-        // But for exact Nyaa ID, we need the full chain (torrents + files + attachments)
-
-        // Best compromise for single-file viewer:
-        status.textContent = 'This single-file viewer cannot map back to Nyaa IDs reliably.';
-        results.innerHTML = '<pre>Note: For accurate Nyaa ID → attachments search, use a full indexed version (in development!).</pre>';
-
-      } catch (err) {
-        status.textContent = 'Error: ' + err.message;
-      }
+      let html = `<p>Found ${results.length} file(s) with subtitles:</p><table><thead><tr><th>Torrent ID</th><th>Torrent Name</th><th>File</th><th>Subtitles</th><th>Download Links</th></tr></thead><tbody>`;
+      results.forEach(r => {
+        html += `<tr><td>${r.torrent_id}</td><td>${r.torrent_name}</td><td>${r.filename}</td><td>`;
+        r.subs.forEach(s => {
+          const hex = Number(s.afid).toString(16).padStart(8, '0');
+          const url = `https://storage.animetosho.org/attach/${hex}/file.xz`;
+          html += `${s.lang.toUpperCase()} (${s.codec}) <a href="${url}" target="_blank">Download</a><br>`;
+        });
+        const packUrl = `https://animetosho.org/storage/torattachpk/${r.torrent_id}/${encodeURIComponent(r.torrent_name)}_attachments.7z`;
+        html += `</td><td><a href="${packUrl}" target="_blank">Full Pack (7z)</a></td></tr>`;
+      });
+      html += '</tbody></table>';
+      div.innerHTML = html;
     }
+
+    // Auto-load on page open
+    loadIndex();
   </script>
 </body>
 </html>
