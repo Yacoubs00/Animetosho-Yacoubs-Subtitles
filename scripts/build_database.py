@@ -19,7 +19,7 @@ def build():
     files = {}     # file_id → {'torrent_id': int, 'filename': str}
     db = {'torrents': {}, 'languages': defaultdict(list), 'stats': {}}
 
-    # Load torrents - files are now in current directory
+    # Files are in current directory (raw_db/)
     with open('torrents-latest.txt', encoding='utf-8') as f:
         header = next(f).strip().split('\t')
         tid_idx = header.index('id') if 'id' in header else 0
@@ -30,7 +30,6 @@ def build():
                 tid = parts[tid_idx]
                 torrents[tid] = {'name': parts[name_idx]}
 
-    # Load files
     with open('files-latest.txt', encoding='utf-8') as f:
         header = next(f).strip().split('\t')
         fid_idx, tid_idx, fname_idx = 0, 1, 3
@@ -40,7 +39,6 @@ def build():
                 fid = parts[fid_idx]
                 files[fid] = {'torrent_id': parts[tid_idx], 'filename': parts[fname_idx]}
 
-    # Load attachments & filter subtitles
     subtitle_count = 0
     lang_stats = defaultdict(int)
     with open('attachments-latest.txt', encoding='utf-8') as f:
@@ -93,7 +91,6 @@ def build():
     for t in db['torrents'].values():
         t['languages'] = sorted(t['languages'])
 
-    # Stats
     db['stats'] = {
         'last_updated': datetime.utcnow().isoformat() + 'Z',
         'torrent_count': len(db['torrents']),
@@ -101,6 +98,7 @@ def build():
         'language_count': len(db['languages'])
     }
 
+    # Save to parent data/ folder
     os.makedirs('../data', exist_ok=True)
     with gzip.open('../data/optimized_db.pkl.gz', 'wb') as f:
         pickle.dump(db, f)
@@ -111,7 +109,7 @@ def build():
     with open('../data/language_stats.json', 'w') as f:
         json.dump({LANGUAGE_NAMES.get(k, k): v for k, v in sorted(lang_stats.items(), key=lambda x: -x[1])}, f, indent=2)
 
-    print("Build complete!")
+    print("Build complete! Optimized database created.")
 
 if __name__ == '__main__':
     build()
