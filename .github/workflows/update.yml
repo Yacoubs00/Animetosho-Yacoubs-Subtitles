@@ -1,0 +1,24 @@
+name: Daily Update Attachments
+
+on:
+  schedule:
+    - cron: '0 6 * * *'  # Daily at 6AM UTC
+  workflow_dispatch:    # Manual trigger
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download & Decompress
+        run: |
+          wget https://storage.animetosho.org/dbexport/attachments-latest.txt.xz
+          xz -d -f attachments-latest.txt.xz
+      - name: Commit & Push
+        run: |
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+          git add attachments-latest.txt
+          git commit -m "Daily update" || echo "No changes"
+          git push
+
