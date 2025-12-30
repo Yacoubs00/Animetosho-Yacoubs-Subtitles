@@ -1,38 +1,44 @@
-name: Daily Update Attachments
+name: Update AnimeTosho Database
+
 on:
   schedule:
-    - cron: '0 6 * * *' # Daily at 6AM UTC
-  workflow_dispatch: # Manual trigger
+    - cron: '0 2 * * *'  # Daily at 2 AM UTC
+  workflow_dispatch:     # Manual run button
 
 jobs:
   update:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repo
+        uses: actions/checkout@v4
 
-      - name: Download Compressed File
-        run: |
-          wget https://storage.animetosho.org/dbexport/attachments-latest.txt.xz
-          # Optional: Remove old file if exists
-          rm -f attachments-latest.txt.xz.old || true
-          mv attachments-latest.txt.xz attachments-latest.txt.xz.new || true
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
 
-      - name: Commit & Push If Changed
+      - name: Download exports
         run: |
-          git config user.name "GitHub Actions"
-          git config user.email "actions@github.com"
-          
-          # Only add if the file exists and changed
-          if [ -f attachments-latest.txt.xz.new ]; then
-            git add attachments-latest.txt.xz.new
-            if git status --porcelain | grep -q '^??\|^ M'; then
-              git mv attachments-latest.txt.xz.new attachments-latest.txt.xz || true  # Overwrite if exists
-              git commit -m "Daily update: attachments-latest.txt.xz"
-              git push
-            else
-              echo "No changes detected."
-            fi
-          else
-            echo "Download failed."
-            exit 1
-          fi
+          mkdir -p raw_db
+          cd raw_db
+          wget -q https://storage.animetosho.org/dbexport/torrents-latest.txt.xz
+          wget -q https://storage.animetosho.org/dbexport/files-latest.txt.xz
+          wget -q https://storage.animetosho.org/dbexport/attachments-latest.txt.xz
+          wget -q https://storage.animetosho.org/dbexport/attachmentfiles-latest.txt.xz
+
+      - name: Decompress & build optimized DB
+        run: |
+          cd raw_db
+          xz -d *.xz
+          python ../scripts/build_database.py
+
+      - name: Cleanup raw files
+        if: always()
+        run: rm -rf raw_db
+
+      - name: Commit updates
+        run: |
+          git config user.name "GitHub Action"
+          git config user.email "action@github.com"
+          git add data/
+          git diff --staged --quiet || (git commit -m "Daily DB update: $(date +'%Y-%m-%d')"; git push)
