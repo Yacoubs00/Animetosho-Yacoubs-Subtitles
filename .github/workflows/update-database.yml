@@ -30,8 +30,7 @@ jobs:
         run: |
           cd raw_db
           xz -d *.xz
-          cd ..
-          python scripts/build_database.py
+          python ../scripts/build_database.py   # Script runs from raw_db/, so use relative paths without prefix
 
       - name: Cleanup raw files
         if: always()
