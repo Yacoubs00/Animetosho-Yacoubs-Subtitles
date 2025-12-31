@@ -30,28 +30,20 @@ jobs:
         run: |
           cd raw_db
           echo "=== Listing downloaded .xz files ==="
-          ls -la *.xz || echo "No .xz files found!"
+          ls -la *.xz
           
           echo "=== Decompressing ==="
-          xz -d *.xz || { echo "Decompression failed!"; exit 1; }
+          xz -d *.xz
           
           echo "=== Decompressed files ==="
-          ls -la
+          ls -la *.txt
           
-          echo "=== First line of torrents-latest.txt (header) ==="
-          head -1 torrents-latest.txt
-          
-          echo "=== First line of files-latest.txt ==="
-          head -1 files-latest.txt
-          
-          echo "=== First line of attachments-latest.txt ==="
-          head -1 attachments-latest.txt
-          
-          echo "=== Running build script ==="
-          python ../scripts/build_database.py || { echo "Build script FAILED — check error above"; exit 1; }
+          echo "=== Running build script with full output ==="
+          python ../scripts/build_database.py 2>&1 || { echo "Build script FAILED (see output above)"; exit 1; }
           
           echo "=== Build success! data/ contents ==="
-          ls -la ../data/
+          ls -la ../data/ || echo "data/ still missing"
+          
           
       - name: Cleanup raw files
         if: always()
