@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <title>AnimeTosho Fast Subtitle Search</title>
   <meta name="description" content="Ultra-fast daily-updated search for AnimeTosho extracted subtitles with direct downloads">
-  <script src="https://cdn.jsdelivr.net/npm/picklejs@1.0.2/dist/pickle.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/pako@2.1.0/dist/pako.min.js"></script> <!-- For gzip decompression -->
   <style>
     body { font-family: Arial, sans-serif; max-width: 1100px; margin: 40px auto; padding: 20px; line-height: 1.6; }
     h1 { text-align: center; }
@@ -20,7 +20,7 @@
     th { background: #f0f0f0; }
     a { color: #007bff; text-decoration: none; margin-right: 8px; }
     a:hover { text-decoration: underline; }
-    .retry { background: #dc3545; }
+    .retry { background: #dc3545; margin-top: 10px; }
     .retry:hover { background: #c82333; }
   </style>
 </head>
@@ -36,7 +36,7 @@
     <button onclick="search()">Search</button>
   </div>
 
-  <div id="status">Loading database (optimized_db.pkl.gz ~50MB)... This may take 10–30 seconds on first visit.</div>
+  <div id="status">Loading database (optimized_db.json.gz ~50MB)... This may take 10–30 seconds on first visit.</div>
   <div id="results"></div>
 
   <script>
@@ -49,24 +49,24 @@
       status.innerHTML = `Downloading database... <em>(~50MB compressed, please wait)</em>`;
 
       try {
-        // Cache-buster for CDN issues
-        const url = `data/optimized_db.pkl.gz?t=${Date.now()}`;
-        const resp = await fetch('data/optimized_db.json.gz');
-        const blob = await resp.blob();
-        const decompressed = await blob.arrayBuffer();
-        const text = new TextDecoder().decode(await new Response(decompressed).arrayBuffer()); // or use pako for gzip
-        db = JSON.parse(text);
+        const url = `data/optimized_db.json.gz?t=${Date.now()}`; // Cache-buster
+        const resp = await fetch(url);
 
         if (!resp.ok) {
-          throw new Error(`HTTP ${resp.status} – ${resp.statusText || 'Unknown error'}`);
+          throw new Error(`HTTP ${resp.status}: ${resp.statusText}`);
         }
 
-        status.textContent = 'Download complete. Decompressing and parsing...';
+        status.textContent = 'Download complete. Decompressing...';
+        const compressed = await resp.arrayBuffer();
 
-        const arrayBuffer = await resp.arrayBuffer();
-        db = await Pickle.load(arrayBuffer);
+        status.textContent = 'Decompressing with pako...';
+        const decompressed = pako.ungzip(new Uint8Array(compressed));
 
-        // Populate languages
+        status.textContent = 'Parsing JSON...';
+        const text = new TextDecoder().decode(decompressed);
+        db = JSON.parse(text);
+
+        // Populate language dropdown
         const select = document.getElementById('lang');
         Object.keys(db.languages)
           .sort()
@@ -74,27 +74,28 @@
             const count = db.languages[code].length;
             const opt = document.createElement('option');
             opt.value = code;
-            opt.textContent = `${code.toUpperCase()} (${count})`;
+            opt.textContent = `${code.toUpperCase()} (${count.toLocaleString()})`;
             select.appendChild(opt);
           });
 
-        status.innerHTML = `<strong style="color:green;">✓ Ready! (${Object.keys(db.torrents).length.toLocaleString()} torrents loaded)</strong>`;
+        status.innerHTML = `<strong style="color:green;">✓ Ready! Loaded ${Object.keys(db.torrents).length.toLocaleString()} torrents with subtitles</strong>`;
         return true;
 
       } catch (err) {
-        console.error('Load failed:', err);
+        console.error('Database load failed:', err);
         status.innerHTML = `
-          <strong style="color:red;">✗ Failed to load database:</strong> ${err.message}<br><br>
-          Temporary GitHub CDN issue or old file.<br><br>
-          <button class="retry" onclick="location.reload()">Retry (Refresh)</button>
+          <strong style="color:red;">✗ Failed to load database</strong><br>
+          ${err.message}<br><br>
+          This may be a temporary GitHub CDN issue.<br><br>
+          <button class="retry" onclick="location.reload()">Retry (Refresh Page)</button>
         `;
         return false;
       }
     }
 
     async function search() {
-      const loaded = await loadDB();
-      if (!loaded) return;
+      const success = await loadDB();
+      if (!success) return;
 
       const query = document.getElementById('query').value.trim().toLowerCase();
       const langFilter = document.getElementById('lang').value;
@@ -102,15 +103,18 @@
       const results = [];
 
       for (const [tid, info] of Object.entries(db.torrents)) {
-        const nameMatch = info.name.toLowerCase().includes(query);
-        const idMatch = tid.includes(query);
-        if (query && !(nameMatch || idMatch)) continue;
-        if (langFilter && !info.languages.includes(langFilter)) continue;
+        const matchesQuery = !query || 
+          tid.includes(query) || 
+          info.name.toLowerCase().includes(query);
 
-        results.push({ tid, ...info });
+        const matchesLang = !langFilter || info.languages.includes(langFilter);
+
+        if (matchesQuery && matchesLang) {
+          results.push({ tid, ...info });
+        }
       }
 
-      displayResults(results.slice(0, 100));
+      displayResults(results.slice(0, 100)); // Top 100
     }
 
     function displayResults(results) {
@@ -121,9 +125,14 @@
         return;
       }
 
-      let html = `<p><strong>${results.length.toLocaleString()} torrent(s) found</strong></p>`;
+      let html = `<p><strong>${results.length.toLocaleString()} torrent(s) found with subtitles</strong></p>`;
       html += `<table>
-        <thead><tr><th>Nyaa ID</th><th>Name</th><th>Languages</th><th>Downloads</th></tr></thead><tbody>`;
+        <thead><tr>
+          <th>Nyaa ID</th>
+          <th>Torrent Name</th>
+          <th>Languages</th>
+          <th>Subtitle Downloads</th>
+        </tr></thead><tbody>`;
 
       results.forEach(t => {
         html += `<tr>
@@ -132,15 +141,21 @@
           <td>${t.languages.map(l => l.toUpperCase()).join(', ')}</td>
           <td>`;
 
+        let hasSubs = false;
         t.subtitle_files.forEach(sf => {
           sf.subs.forEach(s => {
+            hasSubs = true;
             html += `<a href="${s.url}" target="_blank">${s.lang.toUpperCase()}</a> `;
           });
         });
 
-        const packName = encodeURIComponent(t.name);
-        const packUrl = `https://animetosho.org/storage/torattachpk/${t.tid}/${packName}_attachments.7z`;
-        html += `<br><small><a href="${packUrl}" target="_blank">Full Pack</a></small>`;
+        if (hasSubs) {
+          const packName = encodeURIComponent(t.name);
+          const packUrl = `https://animetosho.org/storage/torattachpk/${t.tid}/${packName}_attachments.7z`;
+          html += `<br><small><a href="${packUrl}" target="_blank">Full Attachment Pack (7z)</a></small>`;
+        } else {
+          html += '<em>No direct links</em>';
+        }
 
         html += `</td></tr>`;
       });
@@ -155,6 +170,7 @@
       return div.innerHTML;
     }
 
+    // Start loading
     loadDB();
   </script>
 </body>
