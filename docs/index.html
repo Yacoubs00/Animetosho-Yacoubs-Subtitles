@@ -51,7 +51,11 @@
       try {
         // Cache-buster for CDN issues
         const url = `data/optimized_db.pkl.gz?t=${Date.now()}`;
-        const resp = await fetch(url);
+        const resp = await fetch('data/optimized_db.json.gz');
+        const blob = await resp.blob();
+        const decompressed = await blob.arrayBuffer();
+        const text = new TextDecoder().decode(await new Response(decompressed).arrayBuffer()); // or use pako for gzip
+        db = JSON.parse(text);
 
         if (!resp.ok) {
           throw new Error(`HTTP ${resp.status} – ${resp.statusText || 'Unknown error'}`);
