@@ -6,6 +6,14 @@
       "use": "@vercel/node"
     },
     {
+      "src": "index.html",
+      "use": "@vercel/static"
+    },
+    {
+      "src": "data/**",
+      "use": "@vercel/static"
+    },
+    {
       "src": "**/*.*",
       "use": "@vercel/static"
     }
@@ -14,6 +22,10 @@
     {
       "source": "/api/search",
       "destination": "/api/search.js"
+    },
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
     }
   ]
 }
