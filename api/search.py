@@ -1,51 +1,69 @@
-from flask import Flask, request, jsonify
-import pickle
-import gzip
-import requests  # To fetch DB from GitHub
+import fs from 'fs';
+import { gunzipSync } from 'zlib';
+import path from 'path';
+import { fileURLToPath } from 'url';
 
-app = Flask(__name__)
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
-DB_URL = 'https://raw.githubusercontent.com/Yacoubs00/animetosho-attachments-viewer/main/data/optimized_db.pkl.gz'
-db = None
+let db = null;
 
-def load_db():
-    global db
-    if not db:
-        response = requests.get(DB_URL)
-        response.raise_for_status()
-        with gzip.GzipFile(fileobj=response.content) as f:
-            db = pickle.load(f)
-    return db
+function loadDB() {
+  if (db) return db;
+  const compressedPath = path.join(__dirname, '..', 'data', 'optimized_db.json.gz');
+  const compressed = fs.readFileSync(compressedPath);
+  const decompressed = gunzipSync(compressed);
+  db = JSON.parse(decompressed.toString('utf-8'));
+  return db;
+}
 
-@app.before_first_request
-def init_db():
-    load_db()
+export default function handler(req, res) {
+  try {
+    const db = loadDB();
 
-@app.route('/api/search')
-def search():
-    q = request.args.get('q', '').lower()
-    lang = request.args.get('lang', '')
-    limit = int(request.args.get('limit', 50))
-    
-    results = []
-    for tid, data in db['torrents'].items():
-        if q and not (tid in q or q in data['name'].lower()): continue
-        if lang and lang not in data['languages']: continue
-        results.append({
-            'torrent_id': tid,
-            'name': data['name'],
-            'languages': data['languages'],
-            'subtitle_files': data['subtitle_files']
-        })
-    return jsonify({'results': results[:limit], 'total': len(results)})
+    const { q = '', lang = '', limit = '50' } = req.query;
+    const query = q.toLowerCase();
+    const limitNum = parseInt(limit, 10) || 50;
 
-@app.route('/api/languages')
-def languages():
-    return jsonify(sorted(db['languages'].keys()))
+    const results = [];
 
-@app.route('/api/stats')
-def stats():
-    return jsonify(db['stats'])
+    for (const [tid, info] of Object.entries(db.torrents)) {
+      const matchesQuery = !query || tid.includes(query) || info.name.toLowerCase().includes(query);
+      const matchesLang = !lang || info.languages.includes(lang);
 
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=os.environ.get('PORT', 5000))
+      if (matchesQuery && matchesLang) {
+        results.push({
+          torrent_id: tid,
+          name: info.name,
+          languages: info.languages,
+          subtitle_files: info.subtitle_files.length,
+          download_urls: info.subtitle_files.flatMap(sf => 
+            sf.subs.map(s => ({
+              lang: s.lang,
+              url: s.url,
+              afid: s.afid
+            }))
+          )
+        });
+        if (results.length >= limitNum) break;
+      }
+    }
+
+    res.setHeader('Cache-Control', 's-maxage=3600, stale-while-revalidate=86400');
+    res.status(200).json({
+      results,
+      total: results.length,
+      search_time_ms: 0, // Add timing if needed
+      last_updated: db.stats.last_updated
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to load or search database' });
+  }
+}
+
+export const config = {
+  api: {
+    bodyParser: false // Not needed for GET search
+  }
+};
