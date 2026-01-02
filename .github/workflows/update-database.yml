@@ -3,7 +3,7 @@ name: Update AnimeTosho Database
 on:
   schedule:
     - cron: '0 2 * * *'  # Daily at 2 AM UTC
-  workflow_dispatch:     # Manual run button
+  workflow_dispatch:     # Manual trigger
 
 jobs:
   update:
@@ -26,44 +26,19 @@ jobs:
           wget -q https://storage.animetosho.org/dbexport/attachments-latest.txt.xz
           wget -q https://storage.animetosho.org/dbexport/attachmentfiles-latest.txt.xz
 
-      - name: Decompress & build optimized DB with debug
+      - name: Decompress & build optimized DB
         run: |
           cd raw_db
-          echo "=== Listing downloaded .xz files ==="
-          ls -la *.xz
-          
-          echo "=== Decompressing ==="
           xz -d *.xz
-          
-          echo "=== Decompressed files ==="
-          ls -la *.txt
-          
-          echo "=== Running build script with full output ==="
-          python ../scripts/build_database.py 2>&1 || { echo "Build script FAILED (see output above)"; exit 1; }
-          
-          echo "=== Build success! data/ contents ==="
-          ls -la ../data/ || echo "data/ still missing"
-          
-          
+          python ../scripts/build_database.py
+
       - name: Cleanup raw files
         if: always()
         run: rm -rf raw_db
 
-      - name: Commit and push updates
+      - name: Commit updates
         run: |
           git config user.name "GitHub Action"
           git config user.email "action@github.com"
-          
-          # Create data dir if not exists (safety)
-          mkdir -p data
-          
           git add data/
-          
-          # Commit only if there are staged changes
-          if git diff --staged --quiet; then
-            echo "No changes in data/ — skipping commit"
-          else
-            git commit -m "Daily subtitles DB update: $(date +'%Y-%m-%d')"
-            git push
-            echo "Changes committed and pushed"
-          fi
+          git diff --staged --quiet || (git commit -m "Daily DB update: $(date +'%Y-%m-%d')"; git push)
