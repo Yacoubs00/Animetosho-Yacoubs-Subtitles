@@ -38,10 +38,24 @@ def download_and_process():
                 file_id = int(parts[0])
                 attachment_data = json.loads(parts[1])
                 if len(attachment_data) >= 2 and attachment_data[1]:
-                    afids = [sub['_afid'] for sub in attachment_data[1] if sub and '_afid' in sub]
-                    langs = [sub.get('lang', 'eng') for sub in attachment_data[1] if sub]
+                    afids = []
+                    langs = []
+                    sizes = []
+                    
+                    for sub in attachment_data[1]:
+                        if sub and '_afid' in sub:
+                            afids.append(sub['_afid'])
+                            langs.append(sub.get('lang', 'eng'))
+                            # Extract size from attachment data (usually in bytes)
+                            size = sub.get('size', 0) or sub.get('_size', 0) or 50000  # Default 50KB
+                            sizes.append(size)
+                    
                     if afids:
-                        subtitle_files[file_id] = {'afids': afids, 'languages': langs}
+                        subtitle_files[file_id] = {
+                            'afids': afids, 
+                            'languages': langs,
+                            'sizes': sizes
+                        }
             except:
                 continue
     
@@ -63,7 +77,8 @@ def download_and_process():
                     torrents[torrent_id]['files'].append({
                         'filename': filename,
                         'afids': sub_data['afids'],
-                        'languages': sub_data['languages']
+                        'languages': sub_data['languages'],
+                        'sizes': sub_data['sizes']
                     })
                     
                     for lang in sub_data['languages']:
@@ -87,10 +102,12 @@ def download_and_process():
                     
                     unique_languages = set()
                     total_subtitle_files = 0
+                    total_size = 0
                     
                     for sub_file in subtitle_files_list:
                         unique_languages.update(sub_file['languages'])
                         total_subtitle_files += len(sub_file['afids'])
+                        total_size += sum(sub_file['sizes'])
                     
                     has_pack = (
                         total_subtitle_files >= 3 or
@@ -106,10 +123,14 @@ def download_and_process():
                         clean_name = ''.join(c for c in clean_name if c.isalnum() or c in '.-_ ')
                         clean_name = '.'.join(clean_name.split())
                         
+                        # Estimate pack size (usually 2-10MB for subtitle packs)
+                        pack_size = max(total_size, 2000000)  # Minimum 2MB for packs
+                        
                         subtitle_files_list.append({
                             'filename': 'All Attachments (Pack)',
                             'afids': [0],
                             'languages': list(unique_languages),
+                            'sizes': [pack_size],
                             'is_pack': True,
                             'pack_name': clean_name
                         })
@@ -140,5 +161,3 @@ def download_and_process():
 
 if __name__ == '__main__':
     download_and_process()
-
-
