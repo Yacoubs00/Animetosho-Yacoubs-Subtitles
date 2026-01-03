@@ -30,57 +30,22 @@ jobs:
           mkdir -p data
           python scripts/build_database.py
       
-      - name: Create upload script
-        run: |
-          cat > upload.mjs << 'EOF'
-          import { put, del, list } from '@vercel/blob';
-          import { readFileSync } from 'fs';
-          
-          try {
-            // Delete old database files
-            console.log('🗑️ Cleaning old database files...');
-            const { blobs } = await list({ token: process.env.BLOB_READ_WRITE_TOKEN });
-            
-            for (const blob of blobs) {
-              if (blob.pathname.includes('subtitles')) {
-                await del(blob.url, { token: process.env.BLOB_READ_WRITE_TOKEN });
-                console.log('🗑️ Deleted:', blob.pathname);
-              }
-            }
-            
-            // Upload new database
-            console.log('📤 Uploading new database...');
-            const database = readFileSync('data/subtitles.json', 'utf8');
-            
-            const blob = await put('subtitles.json', database, {
-              access: 'public',
-              token: process.env.BLOB_READ_WRITE_TOKEN
-            });
-            
-            console.log('✅ Database uploaded to:', blob.url);
-            
-          } catch (error) {
-            console.error('❌ Upload failed:', error);
-            process.exit(1);
-          }
-          EOF
-      
-      - name: Upload to Vercel Blob
+      - name: Upload to Vercel Blob with Fixed Name
         env:
           BLOB_READ_WRITE_TOKEN: ${{ secrets.BLOB_READ_WRITE_TOKEN }}
-        run: node upload.mjs
-      
-      - name: Trigger Vercel Deployment
-        env:
-          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
-          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
         run: |
-          # Install Vercel CLI
-          npm install -g vercel
+          node -e "
+          import { put } from '@vercel/blob';
+          import { readFileSync } from 'fs';
           
-          # Trigger deployment
-          echo "🚀 Triggering Vercel deployment..."
-          vercel --prod --token $VERCEL_TOKEN --scope $VERCEL_ORG_ID
+          const database = readFileSync('data/subtitles.json', 'utf8');
           
-          echo "✅ Deployment triggered successfully!"
+          put('subtitles.json', database, {
+            access: 'public',
+            token: process.env.BLOB_READ_WRITE_TOKEN,
+            addRandomSuffix: false
+          }).then(blob => {
+            console.log('✅ Database uploaded to fixed URL:', blob.url);
+          }).catch(console.error);
+          "
+
