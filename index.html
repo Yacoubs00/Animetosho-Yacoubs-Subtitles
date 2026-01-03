@@ -3,38 +3,127 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AnimeTosho Fast Subtitle Search</title>
+    <title>AnimeTosho API Search</title>
     <link rel="stylesheet" href="style.css">
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
 </head>
 <body>
     <div class="container">
         <header>
-            <h1>🎌 AnimeTosho Fast Subtitle Search</h1>
-            <p>Daily updated • Search by anime name • Direct subtitle downloads</p>
+            <h1>🎌 AnimeTosho API Search</h1>
+            <p>Server-side search • No downloads • Instant results</p>
         </header>
 
         <div class="search-section">
             <div class="search-controls">
-                <input type="text" id="searchInput" placeholder="Search anime name..." autocomplete="off">
+                <input type="text" id="searchInput" placeholder="Search anime name...">
                 <select id="languageFilter">
                     <option value="">All Languages</option>
                 </select>
                 <button id="searchBtn">Search</button>
             </div>
-            
-            <div id="loadingStatus" class="loading">
-                Loading database (~50MB)... This may take 10-30 seconds on first visit.
-            </div>
         </div>
 
         <div id="searchResults" class="results"></div>
-        
-        <div id="stats" class="stats"></div>
     </div>
 
-    <script src="js/database.js"></script>
-    <script src="js/search.js"></script>
-    <script src="js/app.js"></script>
+    <script>
+        class APISearch {
+            constructor() {
+                this.baseURL = '/api';
+                this.initializeElements();
+                this.bindEvents();
+                this.loadLanguages();
+            }
+
+            initializeElements() {
+                this.searchInput = document.getElementById('searchInput');
+                this.languageFilter = document.getElementById('languageFilter');
+                this.searchBtn = document.getElementById('searchBtn');
+                this.searchResults = document.getElementById('searchResults');
+            }
+
+            bindEvents() {
+                this.searchBtn.addEventListener('click', () => this.search());
+                this.searchInput.addEventListener('keypress', (e) => {
+                    if (e.key === 'Enter') this.search();
+                });
+            }
+
+            async loadLanguages() {
+                try {
+                    const response = await fetch(`${this.baseURL}/languages`);
+                    const data = await response.json();
+                    
+                    data.languages.forEach(lang => {
+                        const option = document.createElement('option');
+                        option.value = lang;
+                        option.textContent = lang.toUpperCase();
+                        this.languageFilter.appendChild(option);
+                    });
+                } catch (error) {
+                    console.error('Failed to load languages:', error);
+                }
+            }
+
+            async search() {
+                const query = this.searchInput.value.trim();
+                const language = this.languageFilter.value;
+                
+                if (!query) return;
+
+                this.searchResults.innerHTML = '<div class="loading">Searching...</div>';
+
+                try {
+                    const params = new URLSearchParams({
+                        q: query,
+                        lang: language,
+                        limit: 100
+                    });
+
+                    const response = await fetch(`${this.baseURL}/search?${params}`);
+                    const data = await response.json();
+
+                    this.displayResults(data);
+
+                } catch (error) {
+                    this.searchResults.innerHTML = `<div class="error">Search failed: ${error.message}</div>`;
+                }
+            }
+
+            displayResults(data) {
+                if (data.results.length === 0) {
+                    this.searchResults.innerHTML = '<div class="no-results">No results found</div>';
+                    return;
+                }
+
+                const html = `
+                    <div class="results-header">
+                        <h3>Found ${data.total} results in ${data.search_time_ms.toFixed(1)}ms</h3>
+                    </div>
+                    <div class="results-list">
+                        ${data.results.map(result => `
+                            <div class="result-item">
+                                <h4>${result.name}</h4>
+                                <div class="result-meta">
+                                    <span class="languages">${result.languages.join(', ')}</span>
+                                    <span class="file-count">${result.subtitle_files} files</span>
+                                </div>
+                                <a href="${result.download_url}" class="download-btn" target="_blank">
+                                    📥 Download Subtitle
+                                </a>
+                            </div>
+                        `).join('')}
+                    </div>
+                `;
+
+                this.searchResults.innerHTML = html;
+            }
+        }
+
+        // Initialize when DOM ready
+        document.addEventListener('DOMContentLoaded', () => {
+            new APISearch();
+        });
+    </script>
 </body>
 </html>
