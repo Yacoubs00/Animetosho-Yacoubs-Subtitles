@@ -1,7 +1,7 @@
 name: Update Database
 on:
   schedule:
-    - cron: '0 6 * * *'  # Daily at 6 AM
+    - cron: '0 6 * * *'
   workflow_dispatch:
 
 jobs:
@@ -20,9 +20,10 @@ jobs:
           mkdir -p data
           python scripts/build_database.py
       
-      - name: Deploy to Vercel
-        uses: amondnet/vercel-action@v25
-        with:
-          vercel-token: ${{ secrets.VERCEL_TOKEN }}
-          vercel-org-id: ${{ secrets.ORG_ID }}
-          vercel-project-id: ${{ secrets.PROJECT_ID }}
+      - name: Commit Database
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add data/subtitles.json
+          git diff --staged --quiet || git commit -m "Update database $(date)"
+          git push
