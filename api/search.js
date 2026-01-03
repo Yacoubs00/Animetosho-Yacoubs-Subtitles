@@ -22,7 +22,7 @@ export default async function handler(req, res) {
     DB = await response.json();
     lastFetch = Date.now();
 
-    const { q, lang, limit = 50 } = req.query;
+    const { q, lang, limit = 100 } = req.query;
     if (!q) return res.status(400).json({ error: 'Query required' });
 
     const results = [];
