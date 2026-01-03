@@ -8,7 +8,6 @@ export default async function handler(req, res) {
   try {
     const database = req.body;
     
-    // Upload to Vercel Blob
     const blob = await put('subtitles.json', JSON.stringify(database), {
       access: 'public',
       token: process.env.BLOB_READ_WRITE_TOKEN
@@ -19,3 +18,4 @@ export default async function handler(req, res) {
     res.status(500).json({ error: error.message });
   }
 }
+
