@@ -34,13 +34,13 @@ export default async function handler(req, res) {
         
         torrent.subtitle_files.forEach(subFile => {
           if (subFile.is_pack) {
-            // Pack download
+            // Pack download - FIXED URL
             const cleanName = torrent.name.replace(/[^a-zA-Z0-9\-_\s]/g, '').replace(/\s+/g, '_');
             const packSize = subFile.sizes && subFile.sizes[0] ? subFile.sizes[0] : 2000000; // Default 2MB
             
             results.push({
               title: `${torrent.name} [PACK - ALL LANGUAGES]`,
-              subtitle_url: `https://animetosho.org/storage/torattachpk/${id}/${cleanName}_attachments.7z`,
+              subtitle_url: `https://animetosho.org/storage/attachpk/${id}/${cleanName}_attachments.7z`,
               languages: subFile.languages,
               is_pack: true,
               size: packSize,
