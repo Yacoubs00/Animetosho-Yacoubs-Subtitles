@@ -7,7 +7,6 @@ from collections import defaultdict
 def download_and_process():
     print("📥 Downloading AnimeTosho database...")
     
-    # CORRECT URLs with .xz extension
     files = {
         'torrents': 'https://storage.animetosho.org/dbexport/torrents-latest.txt.xz',
         'files': 'https://storage.animetosho.org/dbexport/files-latest.txt.xz', 
@@ -22,7 +21,6 @@ def download_and_process():
                 compressed_data = response.read()
                 print(f"📦 Downloaded {len(compressed_data) / 1024 / 1024:.1f}MB compressed")
                 
-                # Decompress XZ data
                 decompressed_data = lzma.decompress(compressed_data)
                 data[name] = decompressed_data.decode('utf-8', errors='ignore').splitlines()
                 print(f"✅ {name}: {len(data[name])} lines")
@@ -77,38 +75,58 @@ def download_and_process():
     print(f"📊 Found {len(torrents)} torrents with subtitles")
     
     final_db = {}
+    pack_count = 0
+    
     for line in data['torrents'][1:]:
         parts = line.strip().split('\t')
         if len(parts) >= 5:
             try:
                 torrent_id, name = int(parts[0]), parts[4]
                 if torrent_id in torrents:
+                    subtitle_files_list = torrents[torrent_id]['files']
+                    
+                    # IMPROVED PACK DETECTION
+                    unique_languages = set()
+                    total_subtitle_files = 0
+                    
+                    for sub_file in subtitle_files_list:
+                        unique_languages.update(sub_file['languages'])
+                        total_subtitle_files += len(sub_file['afids'])
+                    
+                    # Add pack if: multiple subtitle files OR multiple languages OR batch keywords
+                    has_pack = (
+                        total_subtitle_files >= 3 or  # 3+ subtitle files
+                        len(unique_languages) >= 3 or  # 3+ languages
+                        any(keyword in name.lower() for keyword in [
+                            'batch', 'complete', 'season', 'series', 'collection', 
+                            'multi-subs', 'multisubs', 'dual audio'
+                        ])
+                    )
+                    
+                    if has_pack:
+                        # Create clean filename for pack URL
+                        clean_name = name.replace('[', '').replace(']', '').replace('(', '').replace(')', '')
+                        clean_name = ''.join(c for c in clean_name if c.isalnum() or c in '.-_ ')
+                        clean_name = '.'.join(clean_name.split())
+                        
+                        subtitle_files_list.append({
+                            'filename': 'All Attachments (Pack)',
+                            'afids': [0],  # Special marker
+                            'languages': list(unique_languages),
+                            'is_pack': True,
+                            'pack_name': clean_name
+                        })
+                        pack_count += 1
+                    
                     final_db[str(torrent_id)] = {
                         'name': name,
                         'languages': list(torrents[torrent_id]['languages']),
-                        'subtitle_files': torrents[torrent_id]['files']
+                        'subtitle_files': subtitle_files_list
                     }
             except:
                 continue
     
-    # ADD ATTACHMENT PACKS SUPPORT
-    print("🔄 Processing attachment packs (torattachpk)...")
-    pack_torrents = set()
-    
-    for torrent_id_str, torrent_data in final_db.items():
-        # Add pack download for torrents with multiple subtitle files
-        if len(torrent_data['subtitle_files']) >= 2:
-            pack_torrents.add(torrent_id_str)
-            
-            # Add pack download option
-            torrent_data['subtitle_files'].append({
-                'filename': 'All Attachments (Pack)',
-                'afids': [0],  # Special marker for pack
-                'languages': torrent_data['languages'],
-                'is_pack': True
-            })
-    
-    print(f"📦 Added packs for {len(pack_torrents)} torrents")
+    print(f"📦 Added packs for {pack_count} torrents")
     
     database = {
         'torrents': final_db,
@@ -124,4 +142,3 @@ def download_and_process():
 
 if __name__ == '__main__':
     download_and_process()
-
