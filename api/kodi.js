@@ -40,7 +40,7 @@ export default async function handler(req, res) {
             
             results.push({
               title: `${torrent.name} [PACK - ALL LANGUAGES]`,
-              subtitle_url: `https://animetosho.org/storage/attachpk/${id}/${cleanName}_attachments.7z`,
+              subtitle_url: `https://storage.animetosho.org/attachpk/${id}/${cleanName}_attachments.7z`,
               languages: subFile.languages,
               is_pack: true,
               size: packSize,
@@ -56,7 +56,7 @@ export default async function handler(req, res) {
               
               results.push({
                 title: `${torrent.name} [${language.toUpperCase()}]`,
-                subtitle_url: `https://animetosho.org/storage/attach/${afidHex}/subtitle.ass.xz`,
+                subtitle_url: `https://storage.animetosho.org/attach/${afidHex}/file.xz`,
                 languages: [language],
                 is_pack: false,
                 size: fileSize,
