@@ -4,6 +4,9 @@ import { join } from 'path';
 let DB = null;
 
 export default function handler(req, res) {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET');
+  
   try {
     if (!DB) {
       const dbPath = join(process.cwd(), 'data/subtitles.json');
@@ -23,15 +26,16 @@ export default function handler(req, res) {
       if (torrent && torrent.name.toLowerCase().includes(query)) {
         const afid = torrent.subtitle_files[0].afids[0];
         results.push({
-          name: torrent.name,
-          languages: torrent.languages,
-          download_url: `https://animetosho.org/storage/attach/${afid.toString(16).padStart(8, '0')}/subtitle.ass.xz`
+          title: torrent.name,
+          subtitle_url: `https://animetosho.org/storage/attach/${afid.toString(16).padStart(8, '0')}/subtitle.ass.xz`,
+          languages: torrent.languages
         });
       }
     }
 
-    res.json({ results, total: results.length });
+    res.json({ success: true, data: results, count: results.length });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ success: false, error: error.message });
   }
 }
+
