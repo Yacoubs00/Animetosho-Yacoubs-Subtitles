@@ -1,84 +1,92 @@
-// api/search.js
-import fs from 'fs';
-import { gunzipSync } from 'zlib';
-import path from 'path';
-import { fileURLToPath } from 'url';
+from flask import Flask, request, jsonify
+import pickle
+import gzip
+import os
+from functools import lru_cache
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+app = Flask(__name__)
 
-let db = null;
+# Load database once at startup
+DATABASE = None
 
-function loadDB() {
-  if (db) return db;
-  const filePath = path.join(__dirname, '..', 'data', 'optimized_db.json.gz');
-  const compressed = fs.readFileSync(filePath);
-  const decompressed = gunzipSync(compressed);
-  db = JSON.parse(decompressed.toString('utf-8'));
-  return db;
-}
+def load_database():
+    global DATABASE
+    if DATABASE is None:
+        with gzip.open('data/optimized_db.pkl.gz', 'rb') as f:
+            DATABASE = pickle.load(f)
+    return DATABASE
 
-export default function handler(req, res) {
-  try {
-    const database = loadDB();
+@app.route('/api/search')
+def search():
+    query = request.args.get('q', '').strip()
+    language = request.args.get('lang', '')
+    limit = int(request.args.get('limit', 50))
+    
+    if not query:
+        return jsonify({'error': 'Query required'}), 400
+    
+    db = load_database()
+    results = perform_search(db, query, language, limit)
+    
+    return jsonify(results)
 
-    const { q = '', lang = '', limit = '50' } = req.query;
-    const query = q.toLowerCase().trim();
-    const selectedLang = lang.toLowerCase();
-    const maxResults = Math.min(parseInt(limit) || 50, 200); // Safety cap
+@app.route('/api/languages')
+def languages():
+    db = load_database()
+    langs = sorted(db['languages'].keys())
+    return jsonify({'languages': langs})
 
-    const results = [];
+@app.route('/api/stats')
+def stats():
+    db = load_database()
+    return jsonify(db['stats'])
 
-    for (const [torrentId, info] of Object.entries(database.torrents)) {
-      // Search in torrent name or ID
-      const matchesQuery = !query || 
-        info.name.toLowerCase().includes(query) || 
-        torrentId.includes(query);
-
-      // Language filter
-      const matchesLang = !selectedLang || info.languages.includes(selectedLang);
-
-      if (matchesQuery && matchesLang) {
-        results.push({
-          torrent_id: torrentId,
-          name: info.name,
-          languages: info.languages,
-          subtitle_count: info.subtitle_files.reduce((sum, sf) => sum + sf.subs.length, 0),
-          downloads: info.subtitle_files.flatMap(sf => 
-            sf.subs.map(sub => ({
-              lang: sub.lang.toUpperCase(),
-              url: sub.url,
-              filename: sf.filename || `subtitle_${sub.lang}.ass`
-            }))
-          ),
-          pack_url: `https://animetosho.org/storage/torattachpk/${torrentId}/${encodeURIComponent(info.name)}_attachments.7z`
-        });
-
-        if (results.length >= maxResults) break;
-      }
+@lru_cache(maxsize=1000)
+def perform_search(db_tuple, query, language, limit):
+    # Convert back from tuple for caching
+    db = db_tuple
+    
+    start_time = time.time()
+    results = []
+    query_lower = query.lower()
+    
+    # Filter by language first
+    if language and language in db['languages']:
+        candidates = set(db['languages'][language])
+    else:
+        candidates = set(db['torrents'].keys())
+    
+    # Search
+    for torrent_id in candidates:
+        if len(results) >= limit:
+            break
+            
+        torrent = db['torrents'][torrent_id]
+        if query_lower in torrent['name'].lower():
+            # Get first download URL
+            first_file = torrent['subtitle_files'][0]
+            first_afid = first_file['afids'][0]
+            afid_hex = f"{first_afid:08x}"
+            download_url = f"https://animetosho.org/storage/attach/{afid_hex}/subtitle.ass.xz"
+            
+            results.append({
+                'torrent_id': torrent_id,
+                'name': torrent['name'],
+                'languages': torrent['languages'],
+                'subtitle_files': len(torrent['subtitle_files']),
+                'download_url': download_url,
+                'afid': first_afid
+            })
+    
+    search_time = (time.time() - start_time) * 1000
+    
+    return {
+        'results': results,
+        'total': len(results),
+        'search_time_ms': search_time,
+        'query': query,
+        'language_filter': language
     }
 
-    res.setHeader('Cache-Control', 's-maxage=3600, stale-while-revalidate=86400');
-    res.setHeader('Access-Control-Allow-Origin', '*'); // Crucial for Kodi addons
-    res.status(200).json({
-      success: true,
-      results,
-      total: results.length,
-      cached: !!db,
-      last_updated: database.stats.last_updated
-    });
-
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({
-      success: false,
-      error: 'Server error - database load failed'
-    });
-  }
-}
-
-export const config = {
-  api: {
-    bodyParser: false
-  }
-};
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=5000)
