@@ -130,7 +130,8 @@ def download_and_process():
     
     database = {
         'torrents': final_db,
-        'languages': {lang: [str(tid) for tid in tids] for lang, tids in language_index.items()}
+        'languages': {lang: [str(tid) for tid in tids] for lang, tids in language_index.items()},
+        'build_timestamp': int(__import__('time').time())  # Add timestamp
     }
     
     with open('data/subtitles.json', 'w') as f:
@@ -142,3 +143,4 @@ def download_and_process():
 
 if __name__ == '__main__':
     download_and_process()
+
