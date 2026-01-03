@@ -2,18 +2,14 @@
   "version": 2,
   "builds": [
     {
-      "src": "api/search.js",
-      "use": "@vercel/node"
-    },
-    {
-      "src": "**/*",
+      "src": "index.html",
       "use": "@vercel/static"
     }
   ],
-  "rewrites": [
+  "routes": [
     {
-      "source": "/api/search",
-      "destination": "/api/search.js"
+      "src": "/(.*)",
+      "dest": "/$1"
     }
   ],
   "headers": [
@@ -22,16 +18,11 @@
       "headers": [
         {
           "key": "Cache-Control",
-          "value": "public, max-age=86400, immutable"
-        }
-      ]
-    },
-    {
-      "source": "/api/search",
-      "headers": [
+          "value": "public, max-age=3600"
+        },
         {
-          "key": "Access-Control-Allow-Origin",
-          "value": "*"
+          "key": "Content-Encoding",
+          "value": "gzip"
         }
       ]
     }
