@@ -23,29 +23,44 @@ export default async function handler(req, res) {
       const torrent = DB.torrents[id];
       if (torrent && torrent.name.toLowerCase().includes(query)) {
         
-        // Create download links for ALL subtitle files
         const downloadLinks = [];
         const allLanguages = new Set();
         
         torrent.subtitle_files.forEach(subFile => {
-          subFile.afids.forEach((afid, index) => {
-            const language = subFile.languages[index] || subFile.languages[0] || 'eng';
-            const afidHex = afid.toString(16).padStart(8, '0');
-            
+          if (subFile.is_pack) {
+            // Pack download URL
+            const cleanName = torrent.name.replace(/[^a-zA-Z0-9\-_\s]/g, '').replace(/\s+/g, '_');
             downloadLinks.push({
-              language: language,
-              url: `https://animetosho.org/storage/attach/${afidHex}/subtitle.ass.xz`,
-              filename: subFile.filename
+              language: 'ALL',
+              url: `https://animetosho.org/storage/torattachpk/${id}/${cleanName}_attachments.7z`,
+              filename: subFile.filename,
+              is_pack: true,
+              pack_languages: subFile.languages
             });
             
-            allLanguages.add(language);
-          });
+            subFile.languages.forEach(lang => allLanguages.add(lang));
+          } else {
+            // Individual files
+            subFile.afids.forEach((afid, index) => {
+              const language = subFile.languages[index] || subFile.languages[0] || 'eng';
+              const afidHex = afid.toString(16).padStart(8, '0');
+              
+              downloadLinks.push({
+                language: language,
+                url: `https://animetosho.org/storage/attach/${afidHex}/subtitle.ass.xz`,
+                filename: subFile.filename,
+                is_pack: false
+              });
+              
+              allLanguages.add(language);
+            });
+          }
         });
         
         results.push({
           name: torrent.name,
           languages: Array.from(allLanguages),
-          download_links: downloadLinks, // ✅ All individual links
+          download_links: downloadLinks,
           subtitle_count: downloadLinks.length
         });
       }
@@ -56,3 +71,4 @@ export default async function handler(req, res) {
     res.status(500).json({ error: error.message });
   }
 }
+
