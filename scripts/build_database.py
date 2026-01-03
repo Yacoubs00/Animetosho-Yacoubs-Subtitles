@@ -1,13 +1,11 @@
 #!/usr/bin/env python3
 import json
 import urllib.request
-import gzip
 from collections import defaultdict
 
 def download_and_process():
     print("📥 Downloading AnimeTosho database...")
     
-    # Download files
     files = {
         'torrents': 'https://storage.animetosho.org/dbexport/torrents-latest.txt',
         'files': 'https://storage.animetosho.org/dbexport/files-latest.txt', 
@@ -22,7 +20,6 @@ def download_and_process():
     
     print("🔄 Processing subtitles...")
     
-    # Extract subtitle files
     subtitle_files = {}
     for line in data['attachments']:
         parts = line.strip().split('\t', 1)
@@ -38,11 +35,10 @@ def download_and_process():
             except:
                 continue
     
-    # Map to torrents
     torrents = {}
     language_index = defaultdict(set)
     
-    for line in data['files'][1:]:  # Skip header
+    for line in data['files'][1:]:
         parts = line.strip().split('\t')
         if len(parts) >= 4:
             try:
@@ -64,14 +60,13 @@ def download_and_process():
             except:
                 continue
     
-    # Add torrent names (subtitle-only)
     final_db = {}
-    for line in data['torrents'][1:]:  # Skip header
+    for line in data['torrents'][1:]:
         parts = line.strip().split('\t')
         if len(parts) >= 5:
             try:
                 torrent_id, name = int(parts[0]), parts[4]
-                if torrent_id in torrents:  # Only torrents with subtitles
+                if torrent_id in torrents:
                     final_db[str(torrent_id)] = {
                         'name': name,
                         'languages': list(torrents[torrent_id]['languages']),
@@ -80,18 +75,15 @@ def download_and_process():
             except:
                 continue
     
-    # Create optimized database
     database = {
         'torrents': final_db,
         'languages': {lang: [str(tid) for tid in tids] for lang, tids in language_index.items()}
     }
     
-    # Save as uncompressed JSON for instant server access
     with open('data/subtitles.json', 'w') as f:
         json.dump(database, f, separators=(',', ':'))
     
     print(f"✅ Database built: {len(final_db)} torrents, {len(language_index)} languages")
-    print(f"📊 Size: {len(json.dumps(database, separators=(',', ':'))) / 1024 / 1024:.1f}MB")
 
 if __name__ == '__main__':
     download_and_process()
