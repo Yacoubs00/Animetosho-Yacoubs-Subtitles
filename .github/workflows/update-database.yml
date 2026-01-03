@@ -9,6 +9,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          lfs: true
       
       - name: Setup Python
         uses: actions/setup-python@v4
@@ -20,6 +22,11 @@ jobs:
           mkdir -p data
           python scripts/build_database.py
       
+      - name: Setup Git LFS
+        run: |
+          git lfs track "data/subtitles.json"
+          git add .gitattributes
+      
       - name: Commit Database
         run: |
           git config --local user.email "action@github.com"
@@ -27,3 +34,4 @@ jobs:
           git add data/subtitles.json
           git diff --staged --quiet || git commit -m "Update database $(date)"
           git push
+
