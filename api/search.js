@@ -28,11 +28,11 @@ export default async function handler(req, res) {
         
         torrent.subtitle_files.forEach(subFile => {
           if (subFile.is_pack) {
-            // Pack download URL
-            const cleanName = torrent.name.replace(/[^a-zA-Z0-9\-_\s]/g, '').replace(/\s+/g, '_');
+            // CORRECTED PACK URL: attachpk not torattachpk
+            const packName = subFile.pack_name || torrent.name.replace(/[^a-zA-Z0-9.-_\s]/g, '').replace(/\s+/g, '.');
             downloadLinks.push({
               language: 'ALL',
-              url: `https://animetosho.org/storage/torattachpk/${id}/${cleanName}_attachments.7z`,
+              url: `https://animetosho.org/storage/attachpk/${id}/${packName}_attachments.7z`,
               filename: subFile.filename,
               is_pack: true,
               pack_languages: subFile.languages
