@@ -1,90 +1,52 @@
-from flask import Flask, request, jsonify
-import json
-import gzip
-import os
-import time
+import { readFileSync } from 'fs';
+import { join } from 'path';
 
-app = Flask(__name__)
+let DATABASE = null;
 
-# Global database cache
-_database_cache = None
-_cache_time = 0
-CACHE_DURATION = 3600  # 1 hour
+function loadDatabase() {
+  if (!DATABASE) {
+    const dbPath = join(process.cwd(), 'data', 'subtitles.json');
+    DATABASE = JSON.parse(readFileSync(dbPath, 'utf8'));
+  }
+  return DATABASE;
+}
 
-def get_database():
-    global _database_cache, _cache_time
+export default function handler(req, res) {
+  const { q: query, lang: language, limit = 50 } = req.query;
+  
+  if (!query) {
+    return res.status(400).json({ error: 'Query required' });
+  }
+
+  const db = loadDatabase();
+  const results = [];
+  const queryLower = query.toLowerCase();
+  
+  // Filter torrents
+  const candidates = language && db.languages[language] 
+    ? new Set(db.languages[language])
+    : Object.keys(db.torrents);
+
+  for (const torrentId of candidates) {
+    if (results.length >= limit) break;
     
-    current_time = time.time()
-    if _database_cache is None or (current_time - _cache_time) > CACHE_DURATION:
-        # Load from data directory
-        db_path = os.path.join(os.path.dirname(__file__), '..', 'data', 'optimized_db.json.gz')
-        
-        with gzip.open(db_path, 'rt', encoding='utf-8') as f:
-            _database_cache = json.load(f)
-        
-        _cache_time = current_time
-    
-    return _database_cache
+    const torrent = db.torrents[torrentId];
+    if (torrent.name.toLowerCase().includes(queryLower)) {
+      const firstFile = torrent.subtitle_files[0];
+      const afidHex = firstFile.afids[0].toString(16).padStart(8, '0');
+      
+      results.push({
+        torrent_id: torrentId,
+        name: torrent.name,
+        languages: torrent.languages,
+        download_url: `https://animetosho.org/storage/attach/${afidHex}/subtitle.ass.xz`
+      });
+    }
+  }
 
-def handler(request):
-    """Vercel serverless function handler"""
-    
-    if request.method == 'GET':
-        query = request.args.get('q', '').strip()
-        language = request.args.get('lang', '')
-        limit = int(request.args.get('limit', 50))
-        
-        if not query:
-            return jsonify({'error': 'Query required'}), 400
-        
-        # Load database
-        db = get_database()
-        
-        # Perform search
-        start_time = time.time()
-        results = []
-        query_lower = query.lower()
-        
-        # Filter candidates
-        if language and language in db['languages']:
-            candidates = set(db['languages'][language])
-        else:
-            candidates = set(db['torrents'].keys())
-        
-        # Search
-        for torrent_id in candidates:
-            if len(results) >= limit:
-                break
-                
-            torrent = db['torrents'][torrent_id]
-            if query_lower in torrent['name'].lower():
-                # Get download URL
-                first_file = torrent['subtitle_files'][0]
-                first_afid = first_file['afids'][0]
-                afid_hex = f"{first_afid:08x}"
-                download_url = f"https://animetosho.org/storage/attach/{afid_hex}/subtitle.ass.xz"
-                
-                results.append({
-                    'torrent_id': int(torrent_id),
-                    'name': torrent['name'],
-                    'languages': torrent['languages'],
-                    'subtitle_files': len(torrent['subtitle_files']),
-                    'download_url': download_url
-                })
-        
-        search_time = (time.time() - start_time) * 1000
-        
-        return jsonify({
-            'results': results,
-            'total': len(results),
-            'search_time_ms': search_time,
-            'query': query,
-            'language_filter': language
-        })
-    
-    return jsonify({'error': 'Method not allowed'}), 405
-
-# For Vercel
-def main(request):
-    return handler(request)
-
+  res.json({
+    results,
+    total: results.length,
+    query
+  });
+}
