@@ -91,6 +91,25 @@ def download_and_process():
             except:
                 continue
     
+    # ADD ATTACHMENT PACKS SUPPORT
+    print("🔄 Processing attachment packs (torattachpk)...")
+    pack_torrents = set()
+    
+    for torrent_id_str, torrent_data in final_db.items():
+        # Add pack download for torrents with multiple subtitle files
+        if len(torrent_data['subtitle_files']) >= 2:
+            pack_torrents.add(torrent_id_str)
+            
+            # Add pack download option
+            torrent_data['subtitle_files'].append({
+                'filename': 'All Attachments (Pack)',
+                'afids': [0],  # Special marker for pack
+                'languages': torrent_data['languages'],
+                'is_pack': True
+            })
+    
+    print(f"📦 Added packs for {len(pack_torrents)} torrents")
+    
     database = {
         'torrents': final_db,
         'languages': {lang: [str(tid) for tid in tids] for lang, tids in language_index.items()}
@@ -105,3 +124,4 @@ def download_and_process():
 
 if __name__ == '__main__':
     download_and_process()
+
