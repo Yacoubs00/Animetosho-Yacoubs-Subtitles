@@ -2,6 +2,12 @@ let DB = null;
 let lastFetch = 0;
 const CACHE_DURATION = 3600000;
 
+function formatSize(bytes) {
+  if (bytes < 1024) return `${bytes}B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)}KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
+}
+
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET');
@@ -30,23 +36,32 @@ export default async function handler(req, res) {
           if (subFile.is_pack) {
             // Pack download
             const cleanName = torrent.name.replace(/[^a-zA-Z0-9\-_\s]/g, '').replace(/\s+/g, '_');
+            const packSize = subFile.sizes && subFile.sizes[0] ? subFile.sizes[0] : 2000000; // Default 2MB
+            
             results.push({
               title: `${torrent.name} [PACK - ALL LANGUAGES]`,
               subtitle_url: `https://animetosho.org/storage/torattachpk/${id}/${cleanName}_attachments.7z`,
               languages: subFile.languages,
-              is_pack: true
+              is_pack: true,
+              size: packSize,
+              size_formatted: formatSize(packSize),
+              torrent_id: parseInt(id)
             });
           } else {
             // Individual files
             subFile.afids.forEach((afid, index) => {
               const language = subFile.languages[index] || subFile.languages[0] || 'eng';
               const afidHex = afid.toString(16).padStart(8, '0');
+              const fileSize = subFile.sizes && subFile.sizes[index] ? subFile.sizes[index] : 50000; // Default 50KB
               
               results.push({
                 title: `${torrent.name} [${language.toUpperCase()}]`,
                 subtitle_url: `https://animetosho.org/storage/attach/${afidHex}/subtitle.ass.xz`,
                 languages: [language],
-                is_pack: false
+                is_pack: false,
+                size: fileSize,
+                size_formatted: formatSize(fileSize),
+                torrent_id: parseInt(id)
               });
             });
           }
