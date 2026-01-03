@@ -1,60 +1,28 @@
-name: Update AnimeTosho Database
-
+name: Update Database
 on:
   schedule:
-    - cron: '0 2 * * *'  # Daily at 2 AM UTC
-  workflow_dispatch:      # Manual trigger
+    - cron: '0 6 * * *'  # Daily at 6 AM
+  workflow_dispatch:
 
 jobs:
-  update-database:
+  update:
     runs-on: ubuntu-latest
-    
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
+      - uses: actions/checkout@v4
       
-    - name: Set up Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: '3.11'
-        
-    - name: Install dependencies
-      run: |
-        pip install requests
-        
-    - name: Download AnimeTosho exports
-      run: |
-        mkdir -p temp
-        cd temp
-        wget https://storage.animetosho.org/dbexport/torrents-latest.txt.xz
-        wget https://storage.animetosho.org/dbexport/files-latest.txt.xz
-        wget https://storage.animetosho.org/dbexport/attachments-latest.txt.xz
-        
-    - name: Extract databases
-      run: |
-        cd temp
-        xz -d *.xz
-        
-    - name: Build JSON database
-      run: |
-        mkdir -p data
-        # Update paths in script to use temp/ directory
-        sed -i 's|/home/ycoub/Downloads/|temp/|g' scripts/build_json_database.py
-        python scripts/build_json_database.py
-        
-    - name: Commit and push changes
-      run: |
-        git config --local user.email "action@github.com"
-        git config --local user.name "GitHub Action"
-        git add data/optimized_db.json.gz
-        
-        if git diff --staged --quiet; then
-          echo "No changes to commit"
-        else
-          git commit -m "Update database $(date -u '+%Y-%m-%d %H:%M UTC')"
-          git push
-        fi
-        
-    - name: Clean up
-      run: rm -rf temp/
-
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+      
+      - name: Build Database
+        run: |
+          mkdir -p data
+          python scripts/build_database.py
+      
+      - name: Deploy to Vercel
+        uses: amondnet/vercel-action@v25
+        with:
+          vercel-token: ${{ secrets.VERCEL_TOKEN }}
+          vercel-org-id: ${{ secrets.ORG_ID }}
+          vercel-project-id: ${{ secrets.PROJECT_ID }}
