@@ -1,128 +1,54 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AnimeTosho API Search</title>
-    <link rel="stylesheet" href="style.css">
+    <title>AnimeTosho Search</title>
+    <style>
+        body { font-family: Arial; max-width: 800px; margin: 0 auto; padding: 20px; }
+        .search { margin: 20px 0; }
+        input { padding: 10px; width: 300px; }
+        button { padding: 10px 20px; }
+        .result { border: 1px solid #ddd; margin: 10px 0; padding: 15px; }
+        .loading { color: #666; }
+    </style>
 </head>
 <body>
-    <div class="container">
-        <header>
-            <h1>🎌 AnimeTosho API Search</h1>
-            <p>Server-side search • No downloads • Instant results</p>
-        </header>
-
-        <div class="search-section">
-            <div class="search-controls">
-                <input type="text" id="searchInput" placeholder="Search anime name...">
-                <select id="languageFilter">
-                    <option value="">All Languages</option>
-                </select>
-                <button id="searchBtn">Search</button>
-            </div>
-        </div>
-
-        <div id="searchResults" class="results"></div>
+    <h1>🎌 AnimeTosho Search</h1>
+    
+    <div class="search">
+        <input id="query" placeholder="Search anime..." />
+        <button onclick="search()">Search</button>
     </div>
+    
+    <div id="results"></div>
 
     <script>
-        class APISearch {
-            constructor() {
-                this.baseURL = '/api';
-                this.initializeElements();
-                this.bindEvents();
-                this.loadLanguages();
-            }
-
-            initializeElements() {
-                this.searchInput = document.getElementById('searchInput');
-                this.languageFilter = document.getElementById('languageFilter');
-                this.searchBtn = document.getElementById('searchBtn');
-                this.searchResults = document.getElementById('searchResults');
-            }
-
-            bindEvents() {
-                this.searchBtn.addEventListener('click', () => this.search());
-                this.searchInput.addEventListener('keypress', (e) => {
-                    if (e.key === 'Enter') this.search();
-                });
-            }
-
-            async loadLanguages() {
-                try {
-                    const response = await fetch(`${this.baseURL}/languages`);
-                    const data = await response.json();
-                    
-                    data.languages.forEach(lang => {
-                        const option = document.createElement('option');
-                        option.value = lang;
-                        option.textContent = lang.toUpperCase();
-                        this.languageFilter.appendChild(option);
-                    });
-                } catch (error) {
-                    console.error('Failed to load languages:', error);
-                }
-            }
-
-            async search() {
-                const query = this.searchInput.value.trim();
-                const language = this.languageFilter.value;
+        async function search() {
+            const query = document.getElementById('query').value;
+            if (!query) return;
+            
+            document.getElementById('results').innerHTML = '<div class="loading">Searching...</div>';
+            
+            try {
+                const response = await fetch(`/api/search?q=${encodeURIComponent(query)}`);
+                const data = await response.json();
                 
-                if (!query) return;
-
-                this.searchResults.innerHTML = '<div class="loading">Searching...</div>';
-
-                try {
-                    const params = new URLSearchParams({
-                        q: query,
-                        lang: language,
-                        limit: 100
-                    });
-
-                    const response = await fetch(`${this.baseURL}/search?${params}`);
-                    const data = await response.json();
-
-                    this.displayResults(data);
-
-                } catch (error) {
-                    this.searchResults.innerHTML = `<div class="error">Search failed: ${error.message}</div>`;
-                }
-            }
-
-            displayResults(data) {
-                if (data.results.length === 0) {
-                    this.searchResults.innerHTML = '<div class="no-results">No results found</div>';
-                    return;
-                }
-
-                const html = `
-                    <div class="results-header">
-                        <h3>Found ${data.total} results in ${data.search_time_ms.toFixed(1)}ms</h3>
+                const html = data.results.map(r => `
+                    <div class="result">
+                        <h3>${r.name}</h3>
+                        <p>Languages: ${r.languages.join(', ')}</p>
+                        <a href="${r.download_url}" target="_blank">Download Subtitles</a>
                     </div>
-                    <div class="results-list">
-                        ${data.results.map(result => `
-                            <div class="result-item">
-                                <h4>${result.name}</h4>
-                                <div class="result-meta">
-                                    <span class="languages">${result.languages.join(', ')}</span>
-                                    <span class="file-count">${result.subtitle_files} files</span>
-                                </div>
-                                <a href="${result.download_url}" class="download-btn" target="_blank">
-                                    📥 Download Subtitle
-                                </a>
-                            </div>
-                        `).join('')}
-                    </div>
-                `;
-
-                this.searchResults.innerHTML = html;
+                `).join('');
+                
+                document.getElementById('results').innerHTML = html || '<p>No results found</p>';
+                
+            } catch (error) {
+                document.getElementById('results').innerHTML = '<p>Search failed</p>';
             }
         }
-
-        // Initialize when DOM ready
-        document.addEventListener('DOMContentLoaded', () => {
-            new APISearch();
+        
+        document.getElementById('query').addEventListener('keypress', e => {
+            if (e.key === 'Enter') search();
         });
     </script>
 </body>
