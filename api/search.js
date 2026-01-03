@@ -1,14 +1,15 @@
-import { list } from '@vercel/blob';
-
 let DB = null;
 let lastFetch = 0;
 const CACHE_DURATION = 3600000; // 1 hour
 
 export default async function handler(req, res) {
   try {
-    // Refresh database cache every hour
+    // Get blob URL from environment or use cached
     if (!DB || Date.now() - lastFetch > CACHE_DURATION) {
-      const response = await fetch('https://your-blob-url/subtitles.json');
+      // For now, we'll get the blob URL after first upload
+      // This will be updated once we have the actual blob URL
+      const blobUrl = process.env.DATABASE_BLOB_URL || 'https://your-blob-url/subtitles.json';
+      const response = await fetch(blobUrl);
       DB = await response.json();
       lastFetch = Date.now();
     }
