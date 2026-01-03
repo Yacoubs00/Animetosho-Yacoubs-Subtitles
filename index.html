@@ -31,8 +31,16 @@
                 const html = data.results.map(r => `
                     <div class="result">
                         <h3>${r.name}</h3>
-                        <p>Languages: ${r.languages.join(', ')}</p>
-                        <a href="${r.download_url}" target="_blank">Download Subtitles</a>
+                        <p><strong>Languages:</strong> ${r.languages.join(', ')}</p>
+                        <p><strong>Subtitle Downloads:</strong></p>
+                        <div class="download-links">
+                            ${r.download_links.map(link => 
+                                `<a href="${link.url}" target="_blank" class="download-btn">
+                                    📥 ${link.language.toUpperCase()}
+                                </a>`
+                            ).join('')}
+                        </div>
+                        <small>${r.subtitle_count} subtitle files available</small>
                     </div>
                 `).join('');
                 
@@ -49,3 +57,4 @@
     </script>
 </body>
 </html>
+
