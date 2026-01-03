@@ -1,177 +1,40 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <title>AnimeTosho Fast Subtitle Search</title>
-  <meta name="description" content="Ultra-fast daily-updated search for AnimeTosho extracted subtitles with direct downloads">
-  <script src="https://cdn.jsdelivr.net/npm/pako@2.1.0/dist/pako.min.js"></script> <!-- For gzip decompression -->
-  <style>
-    body { font-family: Arial, sans-serif; max-width: 1100px; margin: 40px auto; padding: 20px; line-height: 1.6; }
-    h1 { text-align: center; }
-    #controls { display: flex; gap: 10px; flex-wrap: wrap; margin: 20px 0; align-items: center; }
-    input, select, button { padding: 12px; font-size: 16px; }
-    input { flex: 1; min-width: 300px; }
-    select { width: 200px; }
-    button { cursor: pointer; background: #007bff; color: white; border: none; border-radius: 4px; }
-    button:hover { background: #0056b3; }
-    #status { padding: 15px; background: #f8f9fa; border: 1px solid #dee2e6; border-radius: 4px; margin: 20px 0; font-weight: bold; }
-    table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-    th, td { border: 1px solid #ddd; padding: 10px; text-align: left; }
-    th { background: #f0f0f0; }
-    a { color: #007bff; text-decoration: none; margin-right: 8px; }
-    a:hover { text-decoration: underline; }
-    .retry { background: #dc3545; margin-top: 10px; }
-    .retry:hover { background: #c82333; }
-  </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AnimeTosho Fast Subtitle Search</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
 </head>
 <body>
-  <h1>AnimeTosho Fast Subtitle Search</h1>
-  <p style="text-align:center;">Daily updated • Search by anime name, Nyaa ID, or language • Direct subtitle downloads</p>
+    <div class="container">
+        <header>
+            <h1>🎌 AnimeTosho Fast Subtitle Search</h1>
+            <p>Daily updated • Search by anime name • Direct subtitle downloads</p>
+        </header>
 
-  <div id="controls">
-    <input type="text" id="query" placeholder="Anime name or Nyaa torrent ID (e.g. 1810173)">
-    <select id="lang">
-      <option value="">All Languages</option>
-    </select>
-    <button onclick="search()">Search</button>
-  </div>
+        <div class="search-section">
+            <div class="search-controls">
+                <input type="text" id="searchInput" placeholder="Search anime name..." autocomplete="off">
+                <select id="languageFilter">
+                    <option value="">All Languages</option>
+                </select>
+                <button id="searchBtn">Search</button>
+            </div>
+            
+            <div id="loadingStatus" class="loading">
+                Loading database (~50MB)... This may take 10-30 seconds on first visit.
+            </div>
+        </div>
 
-  <div id="status">Loading database (optimized_db.json.gz ~50MB)... This may take 10–30 seconds on first visit.</div>
-  <div id="results"></div>
+        <div id="searchResults" class="results"></div>
+        
+        <div id="stats" class="stats"></div>
+    </div>
 
-  <script>
-    let db = null;
-
-    async function loadDB() {
-      if (db) return true;
-
-      const status = document.getElementById('status');
-      status.innerHTML = `Downloading database... <em>(~50MB compressed, please wait)</em>`;
-
-      try {
-        const url = `data/optimized_db.json.gz?t=${Date.now()}`; // Cache-buster
-        const resp = await fetch(url);
-
-        if (!resp.ok) {
-          throw new Error(`HTTP ${resp.status}: ${resp.statusText}`);
-        }
-
-        status.textContent = 'Download complete. Decompressing...';
-        const compressed = await resp.arrayBuffer();
-
-        status.textContent = 'Decompressing with pako...';
-        const decompressed = pako.ungzip(new Uint8Array(compressed));
-
-        status.textContent = 'Parsing JSON...';
-        const text = new TextDecoder().decode(decompressed);
-        db = JSON.parse(text);
-
-        // Populate language dropdown
-        const select = document.getElementById('lang');
-        Object.keys(db.languages)
-          .sort()
-          .forEach(code => {
-            const count = db.languages[code].length;
-            const opt = document.createElement('option');
-            opt.value = code;
-            opt.textContent = `${code.toUpperCase()} (${count.toLocaleString()})`;
-            select.appendChild(opt);
-          });
-
-        status.innerHTML = `<strong style="color:green;">✓ Ready! Loaded ${Object.keys(db.torrents).length.toLocaleString()} torrents with subtitles</strong>`;
-        return true;
-
-      } catch (err) {
-        console.error('Database load failed:', err);
-        status.innerHTML = `
-          <strong style="color:red;">✗ Failed to load database</strong><br>
-          ${err.message}<br><br>
-          This may be a temporary GitHub CDN issue.<br><br>
-          <button class="retry" onclick="location.reload()">Retry (Refresh Page)</button>
-        `;
-        return false;
-      }
-    }
-
-    async function search() {
-      const success = await loadDB();
-      if (!success) return;
-
-      const query = document.getElementById('query').value.trim().toLowerCase();
-      const langFilter = document.getElementById('lang').value;
-
-      const results = [];
-
-      for (const [tid, info] of Object.entries(db.torrents)) {
-        const matchesQuery = !query || 
-          tid.includes(query) || 
-          info.name.toLowerCase().includes(query);
-
-        const matchesLang = !langFilter || info.languages.includes(langFilter);
-
-        if (matchesQuery && matchesLang) {
-          results.push({ tid, ...info });
-        }
-      }
-
-      displayResults(results.slice(0, 100)); // Top 100
-    }
-
-    function displayResults(results) {
-      const div = document.getElementById('results');
-
-      if (results.length === 0) {
-        div.innerHTML = '<p>No matching torrents found.</p>';
-        return;
-      }
-
-      let html = `<p><strong>${results.length.toLocaleString()} torrent(s) found with subtitles</strong></p>`;
-      html += `<table>
-        <thead><tr>
-          <th>Nyaa ID</th>
-          <th>Torrent Name</th>
-          <th>Languages</th>
-          <th>Subtitle Downloads</th>
-        </tr></thead><tbody>`;
-
-      results.forEach(t => {
-        html += `<tr>
-          <td><a href="https://nyaa.si/view/${t.tid}" target="_blank">${t.tid}</a></td>
-          <td>${escapeHtml(t.name)}</td>
-          <td>${t.languages.map(l => l.toUpperCase()).join(', ')}</td>
-          <td>`;
-
-        let hasSubs = false;
-        t.subtitle_files.forEach(sf => {
-          sf.subs.forEach(s => {
-            hasSubs = true;
-            html += `<a href="${s.url}" target="_blank">${s.lang.toUpperCase()}</a> `;
-          });
-        });
-
-        if (hasSubs) {
-          const packName = encodeURIComponent(t.name);
-          const packUrl = `https://animetosho.org/storage/torattachpk/${t.tid}/${packName}_attachments.7z`;
-          html += `<br><small><a href="${packUrl}" target="_blank">Full Attachment Pack (7z)</a></small>`;
-        } else {
-          html += '<em>No direct links</em>';
-        }
-
-        html += `</td></tr>`;
-      });
-
-      html += `</tbody></table>`;
-      div.innerHTML = html;
-    }
-
-    function escapeHtml(text) {
-      const div = document.createElement('div');
-      div.textContent = text;
-      return div.innerHTML;
-    }
-
-    // Start loading
-    loadDB();
-  </script>
+    <script src="js/database.js"></script>
+    <script src="js/search.js"></script>
+    <script src="js/app.js"></script>
 </body>
 </html>
