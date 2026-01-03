@@ -1,15 +1,20 @@
 let DB = null;
 let lastFetch = 0;
-const CACHE_DURATION = 3600000;
+const CACHE_DURATION = 0; // Force refresh every time
 
 export default async function handler(req, res) {
   try {
-    if (!DB || Date.now() - lastFetch > CACHE_DURATION) {
-      const blobUrl = process.env.DATABASE_BLOB_URL;
-      const response = await fetch(blobUrl);
-      DB = await response.json();
-      lastFetch = Date.now();
+    // Always fetch fresh database (remove the if condition)
+    const blobUrl = process.env.DATABASE_BLOB_URL;
+    console.log('Fetching from:', blobUrl); // Debug log
+    
+    const response = await fetch(blobUrl);
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
     }
+    
+    DB = await response.json();
+    lastFetch = Date.now();
 
     const { q, lang, limit = 50 } = req.query;
     if (!q) return res.status(400).json({ error: 'Query required' });
@@ -28,7 +33,6 @@ export default async function handler(req, res) {
         
         torrent.subtitle_files.forEach(subFile => {
           if (subFile.is_pack) {
-            // CORRECTED PACK URL: attachpk not torattachpk
             const packName = subFile.pack_name || torrent.name.replace(/[^a-zA-Z0-9.-_\s]/g, '').replace(/\s+/g, '.');
             downloadLinks.push({
               language: 'ALL',
@@ -40,7 +44,6 @@ export default async function handler(req, res) {
             
             subFile.languages.forEach(lang => allLanguages.add(lang));
           } else {
-            // Individual files
             subFile.afids.forEach((afid, index) => {
               const language = subFile.languages[index] || subFile.languages[0] || 'eng';
               const afidHex = afid.toString(16).padStart(8, '0');
@@ -68,7 +71,7 @@ export default async function handler(req, res) {
 
     res.json({ results, total: results.length });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: error.message, debug_url: process.env.DATABASE_BLOB_URL });
   }
 }
 
