@@ -44,7 +44,7 @@ export default async function handler(req, res) {
             
             downloadLinks.push({
               language: 'ALL',
-              url: `https://animetosho.org/storage/attachpk/${id}/${packName}_attachments.7z`,
+              url: `https://storage.animetosho.org/attachpk/${id}/${packName}_attachments.7z`,
               filename: subFile.filename,
               is_pack: true,
               pack_languages: subFile.languages,
@@ -61,7 +61,7 @@ export default async function handler(req, res) {
               
               downloadLinks.push({
                 language: language,
-                url: `https://animetosho.org/storage/attach/${afidHex}/subtitle.ass.xz`,
+                url: `https://storage.animetosho.org/attach/${afidHex}/file.xz`,
                 filename: subFile.filename,
                 is_pack: false,
                 size: fileSize,
