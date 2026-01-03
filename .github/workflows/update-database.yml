@@ -59,9 +59,6 @@ jobs:
             
             console.log('✅ Database uploaded to:', blob.url);
             
-            // Update environment variable with new URL
-            console.log('🔄 New database URL:', blob.url);
-            
           } catch (error) {
             console.error('❌ Upload failed:', error);
             process.exit(1);
@@ -72,4 +69,18 @@ jobs:
         env:
           BLOB_READ_WRITE_TOKEN: ${{ secrets.BLOB_READ_WRITE_TOKEN }}
         run: node upload.mjs
-
+      
+      - name: Trigger Vercel Deployment
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+        run: |
+          # Install Vercel CLI
+          npm install -g vercel
+          
+          # Trigger deployment
+          echo "🚀 Triggering Vercel deployment..."
+          vercel --prod --token $VERCEL_TOKEN --scope $VERCEL_ORG_ID
+          
+          echo "✅ Deployment triggered successfully!"
