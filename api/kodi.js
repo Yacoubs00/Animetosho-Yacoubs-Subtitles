@@ -4,10 +4,8 @@ import { join } from 'path';
 let DB = null;
 
 export default function handler(req, res) {
-  // CORS headers for Kodi addon
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
   
   if (!DB) {
     DB = JSON.parse(readFileSync(join(process.cwd(), 'data/subtitles.json'), 'utf8'));
@@ -28,15 +26,11 @@ export default function handler(req, res) {
       results.push({
         title: torrent.name,
         subtitle_url: `https://animetosho.org/storage/attach/${afid.toString(16).padStart(8, '0')}/subtitle.ass.xz`,
-        languages: torrent.languages,
-        source: 'AnimeTosho'
+        languages: torrent.languages
       });
     }
   }
 
-  res.json({
-    success: true,
-    count: results.length,
-    data: results
-  });
+  res.json({ success: true, data: results });
 }
+
