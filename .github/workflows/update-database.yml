@@ -33,17 +33,35 @@ jobs:
       - name: Create upload script
         run: |
           cat > upload.mjs << 'EOF'
-          import { put } from '@vercel/blob';
+          import { put, del, list } from '@vercel/blob';
           import { readFileSync } from 'fs';
           
-          const database = readFileSync('data/subtitles.json', 'utf8');
-          
           try {
+            // Delete old database files
+            console.log('🗑️ Cleaning old database files...');
+            const { blobs } = await list({ token: process.env.BLOB_READ_WRITE_TOKEN });
+            
+            for (const blob of blobs) {
+              if (blob.pathname.includes('subtitles')) {
+                await del(blob.url, { token: process.env.BLOB_READ_WRITE_TOKEN });
+                console.log('🗑️ Deleted:', blob.pathname);
+              }
+            }
+            
+            // Upload new database
+            console.log('📤 Uploading new database...');
+            const database = readFileSync('data/subtitles.json', 'utf8');
+            
             const blob = await put('subtitles.json', database, {
               access: 'public',
               token: process.env.BLOB_READ_WRITE_TOKEN
             });
+            
             console.log('✅ Database uploaded to:', blob.url);
+            
+            // Update environment variable with new URL
+            console.log('🔄 New database URL:', blob.url);
+            
           } catch (error) {
             console.error('❌ Upload failed:', error);
             process.exit(1);
