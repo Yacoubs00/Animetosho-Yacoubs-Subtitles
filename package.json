@@ -1,16 +1,6 @@
 {
-  "name": "animetosho-fast-search",
+  "name": "animetosho-search",
   "version": "1.0.0",
-  "description": "Ultra-fast anime subtitle search with 80x performance improvement",
-  "main": "index.html",
-  "scripts": {
-    "build": "python scripts/build_json_database.py",
-    "dev": "python -m http.server 8000",
-    "deploy": "vercel --prod"
-  },
-  "keywords": ["anime", "subtitles", "animetosho", "search"],
-  "author": "Your Name",
-  "license": "MIT",
-  "dependencies": {},
-  "devDependencies": {}
+  "type": "module"
 }
+
