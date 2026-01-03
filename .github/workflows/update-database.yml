@@ -17,14 +17,34 @@ jobs:
         with:
           python-version: '3.11'
       
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+      
+      - name: Install dependencies
+        run: npm install @vercel/blob
+      
       - name: Build Database
         run: |
           mkdir -p data
           python scripts/build_database.py
       
       - name: Upload to Vercel Blob
+        env:
+          BLOB_READ_WRITE_TOKEN: ${{ secrets.BLOB_READ_WRITE_TOKEN }}
         run: |
-          curl -X POST "https://animetosho-attachments-viewer.vercel.app/api/upload-db" \
-            -H "Content-Type: application/json" \
-            -d @data/subtitles.json
+          node -e "
+          import { put } from '@vercel/blob';
+          import { readFileSync } from 'fs';
+          
+          const database = readFileSync('data/subtitles.json', 'utf8');
+          
+          put('subtitles.json', database, {
+            access: 'public',
+            token: process.env.BLOB_READ_WRITE_TOKEN
+          }).then(blob => {
+            console.log('✅ Database uploaded to:', blob.url);
+          }).catch(console.error);
+          "
 
