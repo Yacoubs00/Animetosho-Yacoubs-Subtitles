@@ -1,16 +1,17 @@
 #!/usr/bin/env python3
 import json
 import urllib.request
+import lzma
 from collections import defaultdict
 
 def download_and_process():
     print("📥 Downloading AnimeTosho database...")
     
-    # CORRECT URLs - no trailing slash, correct path
+    # CORRECT URLs with .xz extension
     files = {
-        'torrents': 'https://animetosho.org/storage/dbexport/torrents-latest.txt',
-        'files': 'https://animetosho.org/storage/dbexport/files-latest.txt', 
-        'attachments': 'https://animetosho.org/storage/dbexport/attachments-latest.txt'
+        'torrents': 'https://storage.animetosho.org/dbexport/torrents-latest.txt.xz',
+        'files': 'https://storage.animetosho.org/dbexport/files-latest.txt.xz', 
+        'attachments': 'https://storage.animetosho.org/dbexport/attachments-latest.txt.xz'
     }
     
     data = {}
@@ -18,8 +19,13 @@ def download_and_process():
         print(f"📥 {name}...")
         try:
             with urllib.request.urlopen(url) as response:
-                data[name] = response.read().decode('utf-8', errors='ignore').splitlines()
-            print(f"✅ {name}: {len(data[name])} lines")
+                compressed_data = response.read()
+                print(f"📦 Downloaded {len(compressed_data) / 1024 / 1024:.1f}MB compressed")
+                
+                # Decompress XZ data
+                decompressed_data = lzma.decompress(compressed_data)
+                data[name] = decompressed_data.decode('utf-8', errors='ignore').splitlines()
+                print(f"✅ {name}: {len(data[name])} lines")
         except Exception as e:
             print(f"❌ Failed to download {name}: {e}")
             return
@@ -99,4 +105,3 @@ def download_and_process():
 
 if __name__ == '__main__':
     download_and_process()
-
