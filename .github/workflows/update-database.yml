@@ -30,21 +30,28 @@ jobs:
           mkdir -p data
           python scripts/build_database.py
       
-      - name: Upload to Vercel Blob
-        env:
-          BLOB_READ_WRITE_TOKEN: ${{ secrets.BLOB_READ_WRITE_TOKEN }}
+      - name: Create upload script
         run: |
-          node -e "
+          cat > upload.mjs << 'EOF'
           import { put } from '@vercel/blob';
           import { readFileSync } from 'fs';
           
           const database = readFileSync('data/subtitles.json', 'utf8');
           
-          put('subtitles.json', database, {
-            access: 'public',
-            token: process.env.BLOB_READ_WRITE_TOKEN
-          }).then(blob => {
+          try {
+            const blob = await put('subtitles.json', database, {
+              access: 'public',
+              token: process.env.BLOB_READ_WRITE_TOKEN
+            });
             console.log('✅ Database uploaded to:', blob.url);
-          }).catch(console.error);
-          "
+          } catch (error) {
+            console.error('❌ Upload failed:', error);
+            process.exit(1);
+          }
+          EOF
+      
+      - name: Upload to Vercel Blob
+        env:
+          BLOB_READ_WRITE_TOKEN: ${{ secrets.BLOB_READ_WRITE_TOKEN }}
+        run: node upload.mjs
 
