@@ -1,88 +1,144 @@
-name: Update Database
-on:
-  schedule:
-    - cron: '0 6 * * *'
-  workflow_dispatch:
+#!/usr/bin/env python3
+import json
+import urllib.request
+import lzma
+from collections import defaultdict
 
-jobs:
-  update:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          lfs: true
-      
-      - name: Setup Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.11'
-      
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'  # Updated to Node 20
-      
-      - name: Install dependencies
-        run: npm install @vercel/blob
-      
-      - name: Build Database
-        run: |
-          mkdir -p data
-          python scripts/build_database.py
-      
-      - name: Create upload script
-        run: |
-          cat > upload.mjs << 'EOF'
-          import { put, del, list } from '@vercel/blob';
-          import { readFileSync } from 'fs';
-          
-          try {
-            console.log('🗑️ Cleaning old database files...');
-            const { blobs } = await list({ token: process.env.BLOB_READ_WRITE_TOKEN });
-            
-            for (const blob of blobs) {
-              if (blob.pathname.includes('subtitles')) {
-                await del(blob.url, { token: process.env.BLOB_READ_WRITE_TOKEN });
-                console.log('🗑️ Deleted:', blob.pathname);
-              }
-            }
-            
-            console.log('📤 Uploading new database...');
-            const database = readFileSync('data/subtitles.json', 'utf8');
-            
-            const blob = await put('subtitles.json', database, {
-              access: 'public',
-              token: process.env.BLOB_READ_WRITE_TOKEN
-            });
-            
-            console.log('✅ Database uploaded to:', blob.url);
-            
-          } catch (error) {
-            console.error('❌ Upload failed:', error);
-            process.exit(1);
-          }
-          EOF
-      
-      - name: Upload to Vercel Blob
-        env:
-          BLOB_READ_WRITE_TOKEN: ${{ secrets.BLOB_READ_WRITE_TOKEN }}
-        run: node upload.mjs
-      
-      - name: Clean up large files before deployment
-        run: |
-          echo "🧹 Removing large files before deployment..."
-          rm -rf data/
-          rm -f *.json
-          rm -f upload.mjs
-          echo "✅ Large files removed"
-      
-      - name: Trigger Vercel Deployment
-        env:
-          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
-          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
-        run: |
-          npm install -g vercel
-          echo "🚀 Triggering Vercel deployment..."
-          vercel --prod --token $VERCEL_TOKEN --scope $VERCEL_ORG_ID
-          echo "✅ Deployment triggered successfully!"
+def download_and_process():
+    print("📥 Downloading AnimeTosho database...")
+    
+    files = {
+        'torrents': 'https://storage.animetosho.org/dbexport/torrents-latest.txt.xz',
+        'files': 'https://storage.animetosho.org/dbexport/files-latest.txt.xz', 
+        'attachments': 'https://storage.animetosho.org/dbexport/attachments-latest.txt.xz'
+    }
+    
+    data = {}
+    for name, url in files.items():
+        print(f"📥 {name}...")
+        try:
+            with urllib.request.urlopen(url) as response:
+                compressed_data = response.read()
+                print(f"📦 Downloaded {len(compressed_data) / 1024 / 1024:.1f}MB compressed")
+                
+                decompressed_data = lzma.decompress(compressed_data)
+                data[name] = decompressed_data.decode('utf-8', errors='ignore').splitlines()
+                print(f"✅ {name}: {len(data[name])} lines")
+        except Exception as e:
+            print(f"❌ Failed to download {name}: {e}")
+            return
+    
+    print("🔄 Processing subtitles...")
+    
+    subtitle_files = {}
+    for line in data['attachments']:
+        parts = line.strip().split('\t', 1)
+        if len(parts) == 2:
+            try:
+                file_id = int(parts[0])
+                attachment_data = json.loads(parts[1])
+                if len(attachment_data) >= 2 and attachment_data[1]:
+                    afids = [sub['_afid'] for sub in attachment_data[1] if sub and '_afid' in sub]
+                    langs = [sub.get('lang', 'eng') for sub in attachment_data[1] if sub]
+                    if afids:
+                        subtitle_files[file_id] = {'afids': afids, 'languages': langs}
+            except:
+                continue
+    
+    print(f"📊 Found {len(subtitle_files)} files with subtitles")
+    
+    torrents = {}
+    language_index = defaultdict(set)
+    
+    for line in data['files'][1:]:
+        parts = line.strip().split('\t')
+        if len(parts) >= 4:
+            try:
+                file_id, torrent_id, filename = int(parts[0]), int(parts[1]), parts[3]
+                if file_id in subtitle_files:
+                    if torrent_id not in torrents:
+                        torrents[torrent_id] = {'files': [], 'languages': set()}
+                    
+                    sub_data = subtitle_files[file_id]
+                    torrents[torrent_id]['files'].append({
+                        'filename': filename,
+                        'afids': sub_data['afids'],
+                        'languages': sub_data['languages']
+                    })
+                    
+                    for lang in sub_data['languages']:
+                        torrents[torrent_id]['languages'].add(lang)
+                        language_index[lang].add(torrent_id)
+            except:
+                continue
+    
+    print(f"📊 Found {len(torrents)} torrents with subtitles")
+    
+    final_db = {}
+    pack_count = 0
+    
+    for line in data['torrents'][1:]:
+        parts = line.strip().split('\t')
+        if len(parts) >= 5:
+            try:
+                torrent_id, name = int(parts[0]), parts[4]
+                if torrent_id in torrents:
+                    subtitle_files_list = torrents[torrent_id]['files']
+                    
+                    unique_languages = set()
+                    total_subtitle_files = 0
+                    
+                    for sub_file in subtitle_files_list:
+                        unique_languages.update(sub_file['languages'])
+                        total_subtitle_files += len(sub_file['afids'])
+                    
+                    has_pack = (
+                        total_subtitle_files >= 3 or
+                        len(unique_languages) >= 3 or
+                        any(keyword in name.lower() for keyword in [
+                            'batch', 'complete', 'season', 'series', 'collection', 
+                            'multi-subs', 'multisubs', 'dual audio'
+                        ])
+                    )
+                    
+                    if has_pack:
+                        clean_name = name.replace('[', '').replace(']', '').replace('(', '').replace(')', '')
+                        clean_name = ''.join(c for c in clean_name if c.isalnum() or c in '.-_ ')
+                        clean_name = '.'.join(clean_name.split())
+                        
+                        subtitle_files_list.append({
+                            'filename': 'All Attachments (Pack)',
+                            'afids': [0],
+                            'languages': list(unique_languages),
+                            'is_pack': True,
+                            'pack_name': clean_name
+                        })
+                        pack_count += 1
+                    
+                    final_db[str(torrent_id)] = {
+                        'name': name,
+                        'languages': list(torrents[torrent_id]['languages']),
+                        'subtitle_files': subtitle_files_list
+                    }
+            except:
+                continue
+    
+    print(f"📦 Added packs for {pack_count} torrents")
+    
+    database = {
+        'torrents': final_db,
+        'languages': {lang: [str(tid) for tid in tids] for lang, tids in language_index.items()},
+        'build_timestamp': int(__import__('time').time())
+    }
+    
+    with open('data/subtitles.json', 'w') as f:
+        json.dump(database, f, separators=(',', ':'))
+    
+    size_mb = len(json.dumps(database, separators=(',', ':'))) / 1024 / 1024
+    print(f"✅ Database built: {len(final_db)} torrents, {len(language_index)} languages")
+    print(f"📊 Size: {size_mb:.1f}MB")
+
+if __name__ == '__main__':
+    download_and_process()
+
+
