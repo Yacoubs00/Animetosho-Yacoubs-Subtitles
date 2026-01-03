@@ -25,14 +25,31 @@ export default async function handler(req, res) {
       if (results.length >= limit) break;
       const torrent = DB.torrents[id];
       if (torrent && torrent.name.toLowerCase().includes(query)) {
-        const firstSubFile = torrent.subtitle_files[0];
-        const afid = firstSubFile.afids[0];
         
-        results.push({
-          title: torrent.name,
-          subtitle_url: `https://animetosho.org/storage/attach/${afid.toString(16).padStart(8, '0')}/subtitle.ass.xz`,
-          languages: firstSubFile.languages, // ✅ Only actual file languages
-          subtitle_count: torrent.subtitle_files.length
+        torrent.subtitle_files.forEach(subFile => {
+          if (subFile.is_pack) {
+            // Pack download
+            const cleanName = torrent.name.replace(/[^a-zA-Z0-9\-_\s]/g, '').replace(/\s+/g, '_');
+            results.push({
+              title: `${torrent.name} [PACK - ALL LANGUAGES]`,
+              subtitle_url: `https://animetosho.org/storage/torattachpk/${id}/${cleanName}_attachments.7z`,
+              languages: subFile.languages,
+              is_pack: true
+            });
+          } else {
+            // Individual files
+            subFile.afids.forEach((afid, index) => {
+              const language = subFile.languages[index] || subFile.languages[0] || 'eng';
+              const afidHex = afid.toString(16).padStart(8, '0');
+              
+              results.push({
+                title: `${torrent.name} [${language.toUpperCase()}]`,
+                subtitle_url: `https://animetosho.org/storage/attach/${afidHex}/subtitle.ass.xz`,
+                languages: [language],
+                is_pack: false
+              });
+            });
+          }
         });
       }
     }
@@ -42,4 +59,3 @@ export default async function handler(req, res) {
     res.status(500).json({ success: false, error: error.message });
   }
 }
-
