@@ -4,11 +4,8 @@ const CACHE_DURATION = 3600000; // 1 hour
 
 export default async function handler(req, res) {
   try {
-    // Get blob URL from environment or use cached
     if (!DB || Date.now() - lastFetch > CACHE_DURATION) {
-      // For now, we'll get the blob URL after first upload
-      // This will be updated once we have the actual blob URL
-      const blobUrl = process.env.DATABASE_BLOB_URL || 'https://your-blob-url/subtitles.json';
+      const blobUrl = process.env.DATABASE_BLOB_URL;
       const response = await fetch(blobUrl);
       DB = await response.json();
       lastFetch = Date.now();
@@ -25,10 +22,14 @@ export default async function handler(req, res) {
       if (results.length >= limit) break;
       const torrent = DB.torrents[id];
       if (torrent && torrent.name.toLowerCase().includes(query)) {
-        const afid = torrent.subtitle_files[0].afids[0];
+        // Get the FIRST subtitle file (the one we're actually returning)
+        const firstSubFile = torrent.subtitle_files[0];
+        const afid = firstSubFile.afids[0];
+        
         results.push({
           name: torrent.name,
-          languages: torrent.languages,
+          languages: firstSubFile.languages, // ✅ Only languages of the actual file
+          subtitle_count: torrent.subtitle_files.length, // Show total count
           download_url: `https://animetosho.org/storage/attach/${afid.toString(16).padStart(8, '0')}/subtitle.ass.xz`
         });
       }
