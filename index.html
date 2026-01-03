@@ -34,11 +34,17 @@
                         <p><strong>Languages:</strong> ${r.languages.join(', ')}</p>
                         <p><strong>Subtitle Downloads:</strong></p>
                         <div class="download-links">
-                            ${r.download_links.map(link => 
-                                `<a href="${link.url}" target="_blank" class="download-btn">
-                                    📥 ${link.language.toUpperCase()}
-                                </a>`
-                            ).join('')}
+                            ${r.download_links.map(link => {
+                              if (link.is_pack) {
+                                return `<a href="${link.url}" target="_blank" class="download-btn pack-btn">
+                                          📦 ALL LANGUAGES PACK (${link.pack_languages.join(', ')})
+                                        </a>`;
+                              } else {
+                                return `<a href="${link.url}" target="_blank" class="download-btn">
+                                          📥 ${link.language.toUpperCase()}
+                                        </a>`;
+                              }
+                            }).join('')}
                         </div>
                         <small>${r.subtitle_count} subtitle files available</small>
                     </div>
@@ -57,4 +63,3 @@
     </script>
 </body>
 </html>
-
