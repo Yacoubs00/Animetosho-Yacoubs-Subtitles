@@ -1,22 +1,45 @@
-export default function handler(req, res) {
+let DB = null;
+let lastFetch = 0;
+const CACHE_DURATION = 3600000;
+
+export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET');
   
-  const { q, lang, limit = 50 } = req.query;
-  if (!q) return res.status(400).json({ error: 'Query required' });
-
-  const mockResults = [
-    {
-      title: `[SubsPlease] Attack on Titan - Final Season Part 3 - 01 [1080p]`,
-      subtitle_url: 'https://animetosho.org/storage/attach/1a2b3c4d/subtitle.ass.xz',
-      languages: ['eng']
+  try {
+    if (!DB || Date.now() - lastFetch > CACHE_DURATION) {
+      const blobUrl = process.env.DATABASE_BLOB_URL;
+      const response = await fetch(blobUrl);
+      DB = await response.json();
+      lastFetch = Date.now();
     }
-  ];
 
-  const results = mockResults.filter(r => 
-    r.title.toLowerCase().includes(q.toLowerCase())
-  );
+    const { q, lang, limit = 50 } = req.query;
+    if (!q) return res.status(400).json({ error: 'Query required' });
 
-  res.json({ success: true, data: results, count: results.length });
+    const results = [];
+    const query = q.toLowerCase();
+    const candidates = lang && DB.languages[lang] ? DB.languages[lang] : Object.keys(DB.torrents);
+
+    for (const id of candidates) {
+      if (results.length >= limit) break;
+      const torrent = DB.torrents[id];
+      if (torrent && torrent.name.toLowerCase().includes(query)) {
+        const firstSubFile = torrent.subtitle_files[0];
+        const afid = firstSubFile.afids[0];
+        
+        results.push({
+          title: torrent.name,
+          subtitle_url: `https://animetosho.org/storage/attach/${afid.toString(16).padStart(8, '0')}/subtitle.ass.xz`,
+          languages: firstSubFile.languages, // ✅ Only actual file languages
+          subtitle_count: torrent.subtitle_files.length
+        });
+      }
+    }
+
+    res.json({ success: true, data: results, count: results.length });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
 }
 
