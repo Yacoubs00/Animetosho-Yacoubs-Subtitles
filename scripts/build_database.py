@@ -6,17 +6,23 @@ from collections import defaultdict
 def download_and_process():
     print("📥 Downloading AnimeTosho database...")
     
+    # CORRECT URLs - no trailing slash, correct path
     files = {
-        'torrents': 'https://storage.animetosho.org/dbexport/torrents-latest.txt',
-        'files': 'https://storage.animetosho.org/dbexport/files-latest.txt', 
-        'attachments': 'https://storage.animetosho.org/dbexport/attachments-latest.txt'
+        'torrents': 'https://animetosho.org/storage/dbexport/torrents-latest.txt',
+        'files': 'https://animetosho.org/storage/dbexport/files-latest.txt', 
+        'attachments': 'https://animetosho.org/storage/dbexport/attachments-latest.txt'
     }
     
     data = {}
     for name, url in files.items():
         print(f"📥 {name}...")
-        with urllib.request.urlopen(url) as response:
-            data[name] = response.read().decode('utf-8', errors='ignore').splitlines()
+        try:
+            with urllib.request.urlopen(url) as response:
+                data[name] = response.read().decode('utf-8', errors='ignore').splitlines()
+            print(f"✅ {name}: {len(data[name])} lines")
+        except Exception as e:
+            print(f"❌ Failed to download {name}: {e}")
+            return
     
     print("🔄 Processing subtitles...")
     
@@ -34,6 +40,8 @@ def download_and_process():
                         subtitle_files[file_id] = {'afids': afids, 'languages': langs}
             except:
                 continue
+    
+    print(f"📊 Found {len(subtitle_files)} files with subtitles")
     
     torrents = {}
     language_index = defaultdict(set)
@@ -60,6 +68,8 @@ def download_and_process():
             except:
                 continue
     
+    print(f"📊 Found {len(torrents)} torrents with subtitles")
+    
     final_db = {}
     for line in data['torrents'][1:]:
         parts = line.strip().split('\t')
@@ -83,7 +93,10 @@ def download_and_process():
     with open('data/subtitles.json', 'w') as f:
         json.dump(database, f, separators=(',', ':'))
     
+    size_mb = len(json.dumps(database, separators=(',', ':'))) / 1024 / 1024
     print(f"✅ Database built: {len(final_db)} torrents, {len(language_index)} languages")
+    print(f"📊 Size: {size_mb:.1f}MB")
 
 if __name__ == '__main__':
     download_and_process()
+
