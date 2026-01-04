@@ -9,7 +9,7 @@ def download_and_process():
     
     files = {
         'torrents': 'https://storage.animetosho.org/dbexport/torrents-latest.txt.xz',
-        'files': 'https://storage.animetosho.org/dbexport/files-latest.txt.xz', 
+        'files': 'https://storage.animetosho.org/dbexport/files-latest.txt.xz',
         'attachments': 'https://storage.animetosho.org/dbexport/attachments-latest.txt.xz'
     }
     
@@ -19,11 +19,11 @@ def download_and_process():
         try:
             with urllib.request.urlopen(url) as response:
                 compressed_data = response.read()
-                print(f"📦 Downloaded {len(compressed_data) / 1024 / 1024:.1f}MB compressed")
-                
-                decompressed_data = lzma.decompress(compressed_data)
-                data[name] = decompressed_data.decode('utf-8', errors='ignore').splitlines()
-                print(f"✅ {name}: {len(data[name])} lines")
+            print(f"📦 Downloaded {len(compressed_data) / 1024 / 1024:.1f}MB compressed")
+            
+            decompressed_data = lzma.decompress(compressed_data)
+            data[name] = decompressed_data.decode('utf-8', errors='ignore').splitlines()
+            print(f"✅ {name}: {len(data[name])} lines")
         except Exception as e:
             print(f"❌ Failed to download {name}: {e}")
             return
@@ -37,6 +37,7 @@ def download_and_process():
             try:
                 file_id = int(parts[0])
                 attachment_data = json.loads(parts[1])
+                
                 if len(attachment_data) >= 2 and attachment_data[1]:
                     afids = []
                     langs = []
@@ -45,14 +46,17 @@ def download_and_process():
                     for sub in attachment_data[1]:
                         if sub and '_afid' in sub:
                             afids.append(sub['_afid'])
-                            langs.append(sub.get('lang', 'eng'))
+                            lang = sub.get('lang', 'eng')
+                            if lang == 'und': lang = 'eng'
+                            elif lang == 'enm': lang = 'eng'
+                            langs.append(lang)
                             # Extract size from attachment data (usually in bytes)
                             size = sub.get('size', 0) or sub.get('_size', 0) or 50000  # Default 50KB
                             sizes.append(size)
                     
                     if afids:
                         subtitle_files[file_id] = {
-                            'afids': afids, 
+                            'afids': afids,
                             'languages': langs,
                             'sizes': sizes
                         }
@@ -69,6 +73,7 @@ def download_and_process():
         if len(parts) >= 4:
             try:
                 file_id, torrent_id, filename = int(parts[0]), int(parts[1]), parts[3]
+                
                 if file_id in subtitle_files:
                     if torrent_id not in torrents:
                         torrents[torrent_id] = {'files': [], 'languages': set()}
@@ -97,9 +102,9 @@ def download_and_process():
         if len(parts) >= 5:
             try:
                 torrent_id, name = int(parts[0]), parts[4]
+                
                 if torrent_id in torrents:
                     subtitle_files_list = torrents[torrent_id]['files']
-                    
                     unique_languages = set()
                     total_subtitle_files = 0
                     total_size = 0
@@ -113,7 +118,7 @@ def download_and_process():
                         total_subtitle_files >= 3 or
                         len(unique_languages) >= 3 or
                         any(keyword in name.lower() for keyword in [
-                            'batch', 'complete', 'season', 'series', 'collection', 
+                            'batch', 'complete', 'season', 'series', 'collection',
                             'multi-subs', 'multisubs', 'dual audio'
                         ])
                     )
