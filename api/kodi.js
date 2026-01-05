@@ -1,112 +1,136 @@
-// FIXED Kodi API with torattachpk URLs for complete packs
-let DB = null;
+// SMART Episode-Aware Kodi API
+// Serves targeted episodes instead of random selection
 
-const fixLang = (lang) => {
-    if (lang === 'enm') return 'eng';
-    return lang;
-};
+import fs from 'fs';
+import path from 'path';
 
-function formatSize(bytes) {
-    if (bytes < 1024) return `${bytes}B`;
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)}KB`;
-    return `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
+const DATABASE_PATH = path.join(process.cwd(), 'data', 'subtitles.json');
+
+function loadDatabase() {
+    try {
+        const data = fs.readFileSync(DATABASE_PATH, 'utf8');
+        return JSON.parse(data);
+    } catch (error) {
+        console.error('Database load error:', error);
+        return null;
+    }
 }
 
-function detectEpisodeRange(torrent) {
-    const name = torrent.name.toLowerCase();
-    const fileCount = torrent.torrent_files || 0;
+function extractEpisodeFromQuery(query) {
+    const patterns = [
+        /episode\s+(\d{1,2})/i,
+        /ep\s*(\d{1,2})/i,
+        /\s(\d{1,2})\s/,
+        /-\s*(\d{1,2})\s*$/
+    ];
     
-    // Volume detection
-    if (name.includes('vol.01') || name.includes('volume 1')) return '01-06';
-    if (name.includes('vol.02') || name.includes('volume 2')) return '07-12';
-    
-    // File count detection
-    if (fileCount >= 11) return `01-${fileCount.toString().padStart(2, '0')}`;
-    if (fileCount >= 6) return '01-06';
-    if (fileCount >= 2 && name.includes('vol.01')) return '01-06';
-    
+    for (const pattern of patterns) {
+        const match = query.match(pattern);
+        if (match) return parseInt(match[1]);
+    }
     return null;
 }
 
-export default async function handler(req, res) {
-    try {
-        const blobUrl = process.env.DATABASE_BLOB_URL;
-        const response = await fetch(blobUrl);
-        if (!response.ok) {
-            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-        }
-        DB = await response.json();
-        
-        const { q, limit = 200 } = req.query;
-        if (!q) return res.status(400).json({ error: 'Query required' });
-        
-        const results = [];
-        const query = q.toLowerCase();
-        
-        for (const [id, torrent] of Object.entries(DB.torrents)) {
-            if (results.length >= limit) break;
-            
-            if (torrent && torrent.name.toLowerCase().includes(query)) {
-                const episodeRange = detectEpisodeRange(torrent);
-                
-                if (torrent.subtitle_files && torrent.subtitle_files.length > 0) {
-                    // Look for pack entry
-                    const packFile = torrent.subtitle_files.find(f => f.is_pack);
-                    
-                    if (packFile) {
-                        let displayTitle = torrent.name;
-                        if (episodeRange) {
-                            displayTitle += ` (Eps ${episodeRange})`;
-                        }
-                        
-                        // FIXED: Use torattachpk URL for complete packs
-                        const encodedName = encodeURIComponent(packFile.pack_name);
-                        const packUrl = `https://animetosho.org/storage/torattachpk/${id}/${encodedName}_attachments.7z`;
-                        
-                        results.push({
-                            title: displayTitle,
-                            subtitle_url: packUrl,  // FIXED: Complete pack URL
-                            languages: packFile.languages.map(fixLang),
-                            is_pack: true,
-                            size: packFile.sizes[0],
-                            size_formatted: formatSize(packFile.sizes[0]),
-                            torrent_id: parseInt(id),
-                            episode_range: episodeRange,
-                            torrent_files: torrent.torrent_files || 0,
-                            total_size: torrent.total_size || 0
-                        });
-                    } else {
-                        // Individual files - use attach
-                        const firstSubFile = torrent.subtitle_files[0];
-                        const afidHex = firstSubFile.afids[0].toString(16).padStart(8, '0');
-                        
-                        results.push({
-                            title: torrent.name,
-                            subtitle_url: `https://storage.animetosho.org/attach/${afidHex}/file.xz`,
-                            languages: firstSubFile.languages.map(fixLang),
-                            is_pack: false,
-                            size: firstSubFile.sizes[0],
-                            size_formatted: formatSize(firstSubFile.sizes[0]),
-                            torrent_id: parseInt(id),
-                            episode_range: episodeRange,
-                            torrent_files: torrent.torrent_files || 0,
-                            total_size: torrent.total_size || 0
-                        });
-                    }
-                }
-            }
-        }
-        
-        res.json({
-            success: true,
-            data: results,
-            count: results.length
-        });
-        
-    } catch (error) {
-        res.status(500).json({
-            success: false,
-            error: error.message
-        });
+function smartPackSelection(subtitleFiles, requestedEpisode) {
+    if (!requestedEpisode) {
+        // No specific episode requested - prefer complete pack
+        const completePack = subtitleFiles.find(f => 
+            f.is_pack && f.pack_type === 'complete'
+        );
+        return completePack || subtitleFiles[0];
     }
+    
+    // Specific episode requested - find targeted pack
+    const episodePack = subtitleFiles.find(f => 
+        f.is_pack && 
+        f.pack_type === 'episode_specific' && 
+        f.episode_number === requestedEpisode
+    );
+    
+    if (episodePack) return episodePack;
+    
+    // Fallback to individual file for that episode
+    const individualFile = subtitleFiles.find(f => 
+        !f.is_pack && f.episode_number === requestedEpisode
+    );
+    
+    return individualFile || subtitleFiles[0];
+}
+
+function buildDownloadUrl(file, torrentId, torrentName) {
+    const baseUrl = 'https://storage.animetosho.org';
+    
+    if (file.is_pack) {
+        const cleanName = encodeURIComponent(file.pack_name);
+        
+        if (file.pack_url_type === 'torattachpk') {
+            // Complete pack - use torattachpk
+            return `${baseUrl}/torattachpk/${torrentId}/${cleanName}_attachments.7z`;
+        } else {
+            // Episode-specific pack - use attachpk
+            return `${baseUrl}/attachpk/${torrentId}/${cleanName}_attachments.7z`;
+        }
+    } else {
+        // Individual file
+        const afid = file.afids[0];
+        const afidHex = afid.toString(16).padStart(8, '0');
+        return `${baseUrl}/attach/${afidHex}/file.xz`;
+    }
+}
+
+export default function handler(req, res) {
+    const { q: query, lang = 'eng' } = req.query;
+    
+    if (!query) {
+        return res.status(400).json({ error: 'Query parameter required' });
+    }
+    
+    const database = loadDatabase();
+    if (!database) {
+        return res.status(500).json({ error: 'Database unavailable' });
+    }
+    
+    const requestedEpisode = extractEpisodeFromQuery(query);
+    const results = [];
+    
+    // Search torrents
+    for (const [torrentId, torrent] of Object.entries(database.torrents)) {
+        if (torrent.name.toLowerCase().includes(query.toLowerCase())) {
+            
+            // Filter by language
+            const languageFiles = torrent.subtitle_files.filter(file => 
+                file.languages.includes(lang)
+            );
+            
+            if (languageFiles.length === 0) continue;
+            
+            // SMART: Select best file for the request
+            const selectedFile = smartPackSelection(languageFiles, requestedEpisode);
+            
+            const downloadUrl = buildDownloadUrl(selectedFile, torrentId, torrent.name);
+            
+            results.push({
+                filename: selectedFile.filename,
+                download: downloadUrl,
+                sync: false,
+                hearing_imp: false,
+                language: lang,
+                rating: selectedFile.is_pack ? 5 : 4,
+                size: Math.max(...selectedFile.sizes),
+                torrent_name: torrent.name,
+                episode_match: selectedFile.episode_number === requestedEpisode,
+                pack_type: selectedFile.pack_type || 'individual'
+            });
+        }
+    }
+    
+    // Sort: exact episode matches first, then by size
+    results.sort((a, b) => {
+        if (a.episode_match !== b.episode_match) {
+            return b.episode_match - a.episode_match;
+        }
+        return b.size - a.size;
+    });
+    
+    res.json(results.slice(0, 20));
 }
