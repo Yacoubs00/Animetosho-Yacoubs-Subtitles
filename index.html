@@ -1,62 +1,105 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>AnimeTosho Search</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AnimeTosho Subtitle Search</title>
     <link rel="stylesheet" href="style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
 </head>
 <body>
     <div class="container">
-        <h1>🎌 AnimeTosho Search</h1>
-        <p>Server-side search • No downloads • Instant results</p>
-        
-        <div class="search">
-            <input id="query" placeholder="Search anime...">
-            <button onclick="search()">Search</button>
+        <header class="header">
+            <h1>🎌 AnimeTosho Subtitle Search</h1>
+            <p class="subtitle">Server-side search • Direct subtitle downloads • No torrent client needed • Instant results</p>
+        </header>
+
+        <div class="search-bar">
+            <div class="input-wrapper">
+                <i class="fas fa-search search-icon"></i>
+                <input type="text" id="query" placeholder="Search for anime subtitles (e.g., Terror in Resonance 02)..." autocomplete="off">
+            </div>
+            <button onclick="search()" class="search-btn">
+                <i class="fas fa-search"></i> Search
+            </button>
         </div>
-        
-        <div id="results"></div>
+
+        <div id="results" class="results-grid"></div>
     </div>
 
     <script>
         async function search() {
-            const query = document.getElementById('query').value;
+            const query = document.getElementById('query').value.trim();
             if (!query) return;
-            
-            document.getElementById('results').innerHTML = '<div class="loading">Searching...</div>';
-            
+
+            document.getElementById('results').innerHTML = `
+                <div class="loading-card">
+                    <div class="spinner"></div>
+                    <p>Searching AnimeTosho for subtitles...</p>
+                </div>`;
+
             try {
                 const response = await fetch(`/api/search?q=${encodeURIComponent(query)}`);
                 const data = await response.json();
-                
+
+                if (!data.results || data.results.length === 0) {
+                    document.getElementById('results').innerHTML = '<p class="no-results">😔 No subtitle packs found for your query.</p>';
+                    return;
+                }
+
                 const html = data.results.map(r => `
-                    <div class="result">
-                        <h3>${r.name}</h3>
-                        <p><strong>Languages:</strong> ${r.languages.join(', ')}</p>
-                        <p><strong>Subtitle Downloads:</strong></p>
-                        <div class="download-links">
-                            ${r.download_links.map(link => {
-                              if (link.is_pack) {
-                                return `<a href="${link.url}" target="_blank" class="download-btn pack-btn">
-                                          📦 ALL LANGUAGES PACK (${link.pack_languages.join(', ')})
-                                        </a>`;
-                              } else {
-                                return `<a href="${link.url}" target="_blank" class="download-btn">
-                                          📥 ${link.language.toUpperCase()}
-                                        </a>`;
-                              }
-                            }).join('')}
+                    <div class="result-card">
+                        <div class="card-header">
+                            <h3 class="title">${escapeHtml(r.name)}</h3>
+                            <span class="subtitle-count">
+                                <i class="fas fa-file-alt"></i> ${r.subtitle_count} subtitle file${r.subtitle_count !== 1 ? 's' : ''} available
+                            </span>
                         </div>
-                        <small>${r.subtitle_count} subtitle files available</small>
+
+                        <div class="languages">
+                            <i class="fas fa-globe"></i>
+                            <strong>Languages:</strong> ${r.languages.map(lang => `<span class="lang-tag">${lang.toUpperCase()}</span>`).join('')}
+                        </div>
+
+                        <div class="download-section">
+                            <h4><i class="fas fa-download"></i> Direct Downloads</h4>
+                            <div class="download-grid">
+                                ${r.download_links.map(link => {
+                                    if (link.is_pack) {
+                                        return `
+                                        <a href="${link.url}" target="_blank" class="download-btn pack-btn" title="Full pack with multiple languages">
+                                            <i class="fas fa-box-archive"></i>
+                                            <span class="btn-text">ALL LANGUAGES PACK</span>
+                                            <span class="pack-langs">(${link.pack_languages.join(', ')})</span>
+                                        </a>`;
+                                    } else {
+                                        return `
+                                        <a href="${link.url}" target="_blank" class="download-btn lang-btn" title="Download ${link.language.toUpperCase()} subtitles">
+                                            <i class="fas fa-file-lines"></i>
+                                            <span class="btn-text">${link.language.toUpperCase()}</span>
+                                        </a>`;
+                                    }
+                                }).join('')}
+                            </div>
+                        </div>
                     </div>
                 `).join('');
-                
-                document.getElementById('results').innerHTML = html || '<p>No results found</p>';
-                
+
+                document.getElementById('results').innerHTML = html;
+
             } catch (error) {
-                document.getElementById('results').innerHTML = '<p>Search failed</p>';
+                console.error(error);
+                document.getElementById('results').innerHTML = '<p class="error">⚠️ Search failed. Please try again later.</p>';
             }
         }
-        
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
         document.getElementById('query').addEventListener('keypress', e => {
             if (e.key === 'Enter') search();
         });
