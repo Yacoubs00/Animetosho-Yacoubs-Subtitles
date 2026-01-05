@@ -10,11 +10,52 @@ function formatSize(bytes) {
     return `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
 }
 
+// NEW: Episode detection function
+function detectEpisodeRange(torrent) {
+    const name = torrent.name.toLowerCase();
+    const fileCount = torrent.torrent_files || 0;
+    const totalSize = torrent.total_size || 0;
+    
+    // Series-specific detection
+    if (name.includes('terror') || name.includes('zankyou')) {
+        if (fileCount >= 11 || name.includes('complete') || name.includes('season')) {
+            return '01-11';
+        }
+        if (name.includes('vol.01') || name.includes('volume 1')) return '01-06';
+        if (name.includes('vol.02') || name.includes('volume 2')) return '07-11';
+        if (fileCount === 6) return '01-06';
+        if (fileCount === 5) return '07-11';
+    }
+    
+    // Generic detection
+    if (fileCount >= 20) return `01-${fileCount-1} + Extras`;
+    if (fileCount >= 10) return `01-${fileCount:02d}`;
+    if (name.includes('complete') || name.includes('batch') || name.includes('season')) {
+        return 'Complete';
+    }
+    
+    return null;
+}
+
+function formatDisplayTitle(name, episodeRange, sizeFormatted = '') {
+    if (!episodeRange) {
+        return sizeFormatted ? `${name.slice(0, 70)} (${sizeFormatted})` : name.slice(0, 70);
+    }
+    
+    if (episodeRange.includes('+')) {
+        return `${name.slice(0, 40)} (${episodeRange}) (${sizeFormatted})`;
+    } else if (episodeRange === 'Complete') {
+        return `${name.slice(0, 55)} (Complete) (${sizeFormatted})`;
+    } else {
+        return `${name.slice(0, 45)} (Eps ${episodeRange}) (${sizeFormatted})`;
+    }
+}
+
 export default async function handler(req, res) {
     try {
-        // Always fetch fresh database (remove the if condition)
+        // Always fetch fresh database
         const blobUrl = process.env.DATABASE_BLOB_URL;
-        console.log('Fetching from:', blobUrl); // Debug log
+        console.log('Fetching from:', blobUrl);
         
         const response = await fetch(blobUrl);
         if (!response.ok) {
@@ -39,10 +80,17 @@ export default async function handler(req, res) {
                 const downloadLinks = [];
                 const allLanguages = new Set();
                 
+                // NEW: Detect episode range
+                const episodeRange = detectEpisodeRange(torrent);
+                
                 torrent.subtitle_files.forEach(subFile => {
                     if (subFile.is_pack) {
                         const packName = subFile.pack_name || torrent.name.replace(/[^a-zA-Z0-9.-_\s]/g, '').replace(/\s+/g, '.');
-                        const packSize = subFile.sizes && subFile.sizes[0] ? subFile.sizes[0] : 2000000; // Default 2MB
+                        const packSize = subFile.sizes && subFile.sizes[0] ? subFile.sizes[0] : 2000000;
+                        const sizeFormatted = formatSize(packSize);
+                        
+                        // NEW: Enhanced display title with episode range
+                        const displayTitle = formatDisplayTitle(torrent.name, episodeRange, sizeFormatted);
                         
                         downloadLinks.push({
                             language: 'ALL',
@@ -51,7 +99,9 @@ export default async function handler(req, res) {
                             is_pack: true,
                             pack_languages: subFile.languages.map(fixLang),
                             size: packSize,
-                            size_formatted: formatSize(packSize)
+                            size_formatted: sizeFormatted,
+                            episode_range: episodeRange,  // NEW
+                            display_title: displayTitle   // NEW
                         });
                         
                         subFile.languages.forEach(lang => allLanguages.add(fixLang(lang)));
@@ -59,7 +109,7 @@ export default async function handler(req, res) {
                         subFile.afids.forEach((afid, index) => {
                             const language = fixLang(subFile.languages[index] || subFile.languages[0] || 'eng');
                             const afidHex = afid.toString(16).padStart(8, '0');
-                            const fileSize = subFile.sizes && subFile.sizes[index] ? subFile.sizes[index] : 50000; // Default 50KB
+                            const fileSize = subFile.sizes && subFile.sizes[index] ? subFile.sizes[index] : 50000;
                             
                             downloadLinks.push({
                                 language: language,
@@ -80,20 +130,20 @@ export default async function handler(req, res) {
                     languages: Array.from(allLanguages),
                     download_links: downloadLinks,
                     subtitle_count: downloadLinks.length,
-                    torrent_id: parseInt(id)
+                    torrent_id: parseInt(id),
+                    // NEW: Include torrent metadata
+                    torrent_files: torrent.torrent_files || 0,
+                    total_size: torrent.total_size || 0,
+                    episode_range: episodeRange
                 });
             }
         }
         
-        res.json({
-            results,
-            total: results.length
-        });
-        
+        res.json({ results, total: results.length });
     } catch (error) {
-        res.status(500).json({
-            error: error.message,
-            debug_url: process.env.DATABASE_BLOB_URL
+        res.status(500).json({ 
+            error: error.message, 
+            debug_url: process.env.DATABASE_BLOB_URL 
         });
     }
 }
