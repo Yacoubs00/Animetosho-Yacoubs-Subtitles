@@ -1,12 +1,11 @@
-// Enhanced Search API - Consistent with kodi.js improvements
+// WORKING Search API - Properly formatted
 let DB = null;
 let lastFetch = 0;
 const CACHE_DURATION = 0;
 
 const fixLang = (lang) => {
-    // GOAL 2: Improved language accuracy - don't auto-convert 'und'
-    if (lang === 'enm') return 'eng';  // English-Modified → English
-    return lang;  // Keep 'und' as is (GOAL 3)
+    if (lang === 'enm') return 'eng';
+    return lang;
 };
 
 function formatSize(bytes) {
@@ -15,35 +14,18 @@ function formatSize(bytes) {
     return `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
 }
 
-// GOAL 1: Enhanced episode detection using actual torrent metadata
 function detectEpisodeRange(torrent) {
     const name = torrent.name.toLowerCase();
     const fileCount = torrent.torrent_files || 0;
     
-    // 1. Explicit episode ranges in title
-    const rangeMatch = name.match(/(\d{1,2})-(\d{1,2})/);
-    if (rangeMatch) {
-        const start = parseInt(rangeMatch[1]);
-        const end = parseInt(rangeMatch[2]);
-        return `${start.toString().padStart(2, '0')}-${end.toString().padStart(2, '0')}`;
-    }
-    
-    // 2. Volume detection (GOAL 1: Fixed patterns)
+    // Volume detection
     if (name.includes('vol.01') || name.includes('volume 1')) return '01-06';
     if (name.includes('vol.02') || name.includes('volume 2')) return '07-12';
-    if (name.includes('vol.03') || name.includes('volume 3')) return '13-18';
-    if (name.includes('vol.04') || name.includes('volume 4')) return '19-24';
     
-    // 3. File count based detection (GOAL 5: Using actual metadata)
-    if (fileCount >= 20) return `01-${(fileCount-1).toString().padStart(2, '0')} + Extras`;
+    // File count detection
     if (fileCount >= 11) return `01-${fileCount.toString().padStart(2, '0')}`;
-    if (fileCount >= 6) return `01-06`;
-    if (fileCount >= 2 && name.includes('vol.01')) return '01-06';  // SallySubs case
-    
-    // 4. Pack/batch indicators
-    if (name.includes('complete') || name.includes('batch') || name.includes('season')) {
-        return 'Complete';
-    }
+    if (fileCount >= 6) return '01-06';
+    if (fileCount >= 2 && name.includes('vol.01')) return '01-06';
     
     return null;
 }
@@ -53,9 +35,7 @@ function formatDisplayTitle(name, episodeRange, sizeFormatted = '') {
         return sizeFormatted ? `${name.slice(0, 70)} (${sizeFormatted})` : name.slice(0, 70);
     }
     
-    if (episodeRange.includes('+')) {
-        return `${name.slice(0, 40)} (${episodeRange}) (${sizeFormatted})`;
-    } else if (episodeRange === 'Complete') {
+    if (episodeRange === 'Complete') {
         return `${name.slice(0, 55)} (Complete) (${sizeFormatted})`;
     } else {
         return `${name.slice(0, 45)} (Eps ${episodeRange}) (${sizeFormatted})`;
@@ -89,7 +69,6 @@ export default async function handler(req, res) {
                 const episodeRange = detectEpisodeRange(torrent);
                 
                 torrent.subtitle_files.forEach(subFile => {
-                    // GOAL 1: Handle pack files properly
                     if (subFile.is_pack) {
                         const packSize = subFile.sizes[0];
                         const sizeFormatted = formatSize(packSize);
@@ -101,7 +80,7 @@ export default async function handler(req, res) {
                             filename: subFile.filename,
                             is_pack: true,
                             pack_languages: subFile.languages.map(fixLang),
-                            size: packSize,  // GOAL 1: Actual pack size
+                            size: packSize,
                             size_formatted: sizeFormatted,
                             episode_range: episodeRange,
                             display_title: displayTitle
@@ -109,11 +88,10 @@ export default async function handler(req, res) {
                         
                         subFile.languages.forEach(lang => allLanguages.add(fixLang(lang)));
                     } else {
-                        // Individual files
                         subFile.afids.forEach((afid, index) => {
                             const language = fixLang(subFile.languages[index] || subFile.languages[0] || 'eng');
                             const afidHex = afid.toString(16).padStart(8, '0');
-                            const fileSize = subFile.sizes[index] || 50000;  // GOAL 1: Actual file size
+                            const fileSize = subFile.sizes[index] || 50000;
                             
                             downloadLinks.push({
                                 language: language,
@@ -135,8 +113,8 @@ export default async function handler(req, res) {
                     download_links: downloadLinks,
                     subtitle_count: downloadLinks.length,
                     torrent_id: parseInt(id),
-                    torrent_files: torrent.torrent_files || 0,  // GOAL 5: Actual metadata
-                    total_size: torrent.total_size || 0,        // GOAL 5: Actual metadata
+                    torrent_files: torrent.torrent_files || 0,
+                    total_size: torrent.total_size || 0,
                     episode_range: episodeRange
                 });
             }
@@ -144,8 +122,7 @@ export default async function handler(req, res) {
         
         res.json({
             results,
-            total: results.length,
-            version: DB.version || '1.0'  // Show database version
+            total: results.length
         });
         
     } catch (error) {
