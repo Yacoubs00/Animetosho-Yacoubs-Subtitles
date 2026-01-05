@@ -1,8 +1,5 @@
-// api/kodi.js - Kodi-compatible API endpoint with episode detection
-
+// api/kodi.js - GENERIC Kodi API for ALL anime
 let DB = null;
-let lastFetch = 0;
-const CACHE_DURATION = 0; // Force refresh every time
 
 const fixLang = (lang) => lang === 'und' || lang === 'enm' ? 'eng' : lang;
 
@@ -12,25 +9,31 @@ function formatSize(bytes) {
     return `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
 }
 
-// Built-in episode detection (no import needed)
+// GENERIC episode detection for ALL anime
 function detectEpisodeRange(torrent) {
     const name = torrent.name.toLowerCase();
     const fileCount = torrent.torrent_files || 0;
     
-    // Series-specific detection
-    if (name.includes('terror') || name.includes('zankyou')) {
-        if (fileCount >= 11 || name.includes('complete') || name.includes('season')) {
-            return '01-11';
-        }
-        if (name.includes('vol.01') || name.includes('volume 1')) return '01-06';
-        if (name.includes('vol.02') || name.includes('volume 2')) return '07-11';
-        if (fileCount === 6) return '01-06';
-        if (fileCount === 5) return '07-11';
+    // 1. Explicit episode ranges in title
+    const rangeMatch = name.match(/(\d{1,2})-(\d{1,2})/);
+    if (rangeMatch) {
+        const start = parseInt(rangeMatch[1]);
+        const end = parseInt(rangeMatch[2]);
+        return `${start.toString().padStart(2, '0')}-${end.toString().padStart(2, '0')}`;
     }
     
-    // Generic detection
+    // 2. Volume detection (generic for ALL anime)
+    if (name.includes('vol.01') || name.includes('volume 1')) return '01-06';
+    if (name.includes('vol.02') || name.includes('volume 2')) return '07-12';
+    if (name.includes('vol.03') || name.includes('volume 3')) return '13-18';
+    if (name.includes('vol.04') || name.includes('volume 4')) return '19-24';
+    
+    // 3. File count based detection (generic for ALL anime)
     if (fileCount >= 20) return `01-${(fileCount-1).toString().padStart(2, '0')} + Extras`;
     if (fileCount >= 10) return `01-${fileCount.toString().padStart(2, '0')}`;
+    if (fileCount >= 5) return `01-${fileCount.toString().padStart(2, '0')}`;
+    
+    // 4. Pack/batch indicators
     if (name.includes('complete') || name.includes('batch') || name.includes('season')) {
         return 'Complete';
     }
@@ -38,33 +41,15 @@ function detectEpisodeRange(torrent) {
     return null;
 }
 
-function formatDisplayTitle(name, episodeRange, sizeFormatted = '') {
-    if (!episodeRange) {
-        return sizeFormatted ? `${name.slice(0, 70)} (${sizeFormatted})` : name.slice(0, 70);
-    }
-    
-    if (episodeRange.includes('+')) {
-        return `${name.slice(0, 40)} (${episodeRange}) (${sizeFormatted})`;
-    } else if (episodeRange === 'Complete') {
-        return `${name.slice(0, 55)} (Complete) (${sizeFormatted})`;
-    } else {
-        return `${name.slice(0, 45)} (Eps ${episodeRange}) (${sizeFormatted})`;
-    }
-}
-
 export default async function handler(req, res) {
     try {
-        // Always fetch fresh database
         const blobUrl = process.env.DATABASE_BLOB_URL;
-        console.log('Fetching from:', blobUrl);
-        
         const response = await fetch(blobUrl);
         if (!response.ok) {
             throw new Error(`HTTP ${response.status}: ${response.statusText}`);
         }
         
         DB = await response.json();
-        lastFetch = Date.now();
         
         const { q, limit = 200 } = req.query;
         if (!q) return res.status(400).json({ error: 'Query required' });
@@ -72,69 +57,41 @@ export default async function handler(req, res) {
         const results = [];
         const query = q.toLowerCase();
         
-        // Search through all torrents
         for (const [id, torrent] of Object.entries(DB.torrents)) {
             if (results.length >= limit) break;
             
             if (torrent && torrent.name.toLowerCase().includes(query)) {
-                // Detect episode range
                 const episodeRange = detectEpisodeRange(torrent);
+                const firstSubFile = torrent.subtitle_files[0];
                 
-                // Process subtitle files
-                const subtitleFiles = [];
-                const allLanguages = new Set();
-                
-                torrent.subtitle_files.forEach(subFile => {
-                    if (subFile.is_pack) {
-                        const packName = subFile.pack_name || torrent.name.replace(/[^a-zA-Z0-9.-_\s]/g, '').replace(/\s+/g, '.');
-                        const packSize = subFile.sizes && subFile.sizes[0] ? subFile.sizes[0] : 2000000;
-                        const sizeFormatted = formatSize(packSize);
-                        
-                        subtitleFiles.push({
-                            url: `https://storage.animetosho.org/attachpk/${id}/${packName}_attachments.7z`,
-                            languages: subFile.languages.map(fixLang),
-                            is_pack: true,
-                            size: packSize,
-                            size_formatted: sizeFormatted
-                        });
-                        
-                        subFile.languages.forEach(lang => allLanguages.add(fixLang(lang)));
+                if (firstSubFile) {
+                    let url, size, sizeFormatted;
+                    
+                    if (firstSubFile.is_pack) {
+                        const packName = firstSubFile.pack_name || torrent.name.replace(/[^a-zA-Z0-9.-_\s]/g, '').replace(/\s+/g, '.');
+                        url = `https://storage.animetosho.org/attachpk/${id}/${packName}_attachments.7z`;
+                        size = firstSubFile.sizes?.[0] || 2000000;
                     } else {
-                        subFile.afids.forEach((afid, index) => {
-                            const language = fixLang(subFile.languages[index] || subFile.languages[0] || 'eng');
-                            const afidHex = afid.toString(16).padStart(8, '0');
-                            const fileSize = subFile.sizes && subFile.sizes[index] ? subFile.sizes[index] : 50000;
-                            
-                            subtitleFiles.push({
-                                url: `https://storage.animetosho.org/attach/${afidHex}/file.xz`,
-                                languages: [language],
-                                is_pack: false,
-                                size: fileSize,
-                                size_formatted: formatSize(fileSize)
-                            });
-                            
-                            allLanguages.add(language);
-                        });
+                        const afidHex = firstSubFile.afids[0].toString(16).padStart(8, '0');
+                        url = `https://storage.animetosho.org/attach/${afidHex}/file.xz`;
+                        size = firstSubFile.sizes?.[0] || 50000;
                     }
-                });
-                
-                // Format for Kodi compatibility
-                const kodiResult = {
-                    title: torrent.name,
-                    subtitle_url: subtitleFiles[0]?.url || '',
-                    languages: Array.from(allLanguages),
-                    is_pack: subtitleFiles.some(file => file.is_pack),
-                    size: subtitleFiles[0]?.size || 50000,
-                    size_formatted: subtitleFiles[0]?.size_formatted || '50KB',
-                    torrent_id: parseInt(id),
-                    // Enhanced fields
-                    episode_range: episodeRange,
-                    display_title: formatDisplayTitle(torrent.name, episodeRange, subtitleFiles[0]?.size_formatted),
-                    torrent_files: torrent.torrent_files || 0,
-                    total_size: torrent.total_size || 0
-                };
-                
-                results.push(kodiResult);
+                    
+                    sizeFormatted = formatSize(size);
+                    
+                    results.push({
+                        title: torrent.name,
+                        subtitle_url: url,
+                        languages: firstSubFile.languages.map(fixLang),
+                        is_pack: firstSubFile.is_pack || false,
+                        size: size,
+                        size_formatted: sizeFormatted,
+                        torrent_id: parseInt(id),
+                        episode_range: episodeRange,
+                        torrent_files: torrent.torrent_files || 0,
+                        total_size: torrent.total_size || 0
+                    });
+                }
             }
         }
         
@@ -145,11 +102,9 @@ export default async function handler(req, res) {
         });
         
     } catch (error) {
-        console.error('Kodi API Error:', error);
         res.status(500).json({ 
             success: false,
-            error: error.message, 
-            debug_url: process.env.DATABASE_BLOB_URL 
+            error: error.message
         });
     }
 }
