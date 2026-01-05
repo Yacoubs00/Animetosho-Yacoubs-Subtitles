@@ -1,86 +1,33 @@
-let DB = null;
-let lastFetch = 0;
-const CACHE_DURATION = 3600000;
+# Add this to the top of your api/kodi.py file:
+from .episode_detector import EpisodeDetector
 
-const fixLang = (lang) => lang === 'und' || lang === 'enm' ? 'eng' : lang;
+# Initialize detector globally
+episode_detector = EpisodeDetector()
 
-function formatSize(bytes) {
-    if (bytes < 1024) return `${bytes}B`;
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)}KB`;
-    return `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
-}
-
-export default async function handler(req, res) {
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'GET');
+# In your main API handler function, add this processing:
+def process_results_with_episode_detection(raw_results):
+    """Process results and add episode range information"""
+    enhanced_results = []
     
-    try {
-        if (!DB || Date.now() - lastFetch > CACHE_DURATION) {
-            const blobUrl = process.env.DATABASE_BLOB_URL;
-            const response = await fetch(blobUrl);
-            DB = await response.json();
-            lastFetch = Date.now();
-        }
+    for result in raw_results:
+        title = result.get('title', '')
+        file_count = result.get('torrent_files', 0)  # From your database query
+        total_size = result.get('total_size', 0)     # From your database query
         
-        const { q, lang, limit = 100 } = req.query;
-        if (!q) return res.status(400).json({ error: 'Query required' });
+        # Detect episode range
+        episode_range = episode_detector.detect_episode_range(title, file_count, total_size)
         
-        const results = [];
-        const query = q.toLowerCase();
-        const candidates = lang && DB.languages[lang] ? DB.languages[lang] : Object.keys(DB.torrents);
+        # Add enhanced fields
+        result['episode_range'] = episode_range
+        result['display_title'] = episode_detector.format_display_title(
+            title, episode_range, result.get('size_formatted', '')
+        )
         
-        for (const id of candidates) {
-            if (results.length >= limit) break;
-            
-            const torrent = DB.torrents[id];
-            if (torrent && torrent.name.toLowerCase().includes(query)) {
-                torrent.subtitle_files.forEach(subFile => {
-                    if (subFile.is_pack) {
-                        // Pack download - FIXED URL
-                        const cleanName = torrent.name.replace(/[^a-zA-Z0-9\-_\s]/g, '').replace(/\s+/g, '_');
-                        const packSize = subFile.sizes && subFile.sizes[0] ? subFile.sizes[0] : 2000000; // Default 2MB
-                        
-                        results.push({
-                            title: `${torrent.name} [PACK - ALL LANGUAGES]`,
-                            subtitle_url: `https://storage.animetosho.org/attachpk/${id}/${cleanName}_attachments.7z`,
-                            languages: subFile.languages.map(fixLang),
-                            is_pack: true,
-                            size: packSize,
-                            size_formatted: formatSize(packSize),
-                            torrent_id: parseInt(id)
-                        });
-                    } else {
-                        // Individual files
-                        subFile.afids.forEach((afid, index) => {
-                            const language = fixLang(subFile.languages[index] || subFile.languages[0] || 'eng');
-                            const afidHex = afid.toString(16).padStart(8, '0');
-                            const fileSize = subFile.sizes && subFile.sizes[index] ? subFile.sizes[index] : 50000; // Default 50KB
-                            
-                            results.push({
-                                title: `${torrent.name} [${language.toUpperCase()}]`,
-                                subtitle_url: `https://storage.animetosho.org/attach/${afidHex}/file.xz`,
-                                languages: [language],
-                                is_pack: false,
-                                size: fileSize,
-                                size_formatted: formatSize(fileSize),
-                                torrent_id: parseInt(id)
-                            });
-                        });
-                    }
-                });
-            }
-        }
-        
-        res.json({
-            success: true,
-            data: results,
-            count: results.length
-        });
-        
-    } catch (error) {
-        res.status(500).json({
-            success: false,
-            error: error.message
-        });
-    }
-}
+        enhanced_results.append(result)
+    
+    return enhanced_results
+
+# In your main API handler, call this function:
+# raw_results = your_existing_database_query(query, limit)
+# enhanced_results = process_results_with_episode_detection(raw_results)
+# return {'success': True, 'data': enhanced_results, 'count': len(enhanced_results)}
