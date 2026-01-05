@@ -1,6 +1,6 @@
 let DB = null;
 let lastFetch = 0;
-const CACHE_DURATION = 0; // Force refresh every time
+const CACHE_DURATION = 0;
 
 const fixLang = (lang) => lang === 'und' || lang === 'enm' ? 'eng' : lang;
 
@@ -10,26 +10,31 @@ function formatSize(bytes) {
     return `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
 }
 
-// NEW: Episode detection function
+// GENERIC episode detection for ALL anime
 function detectEpisodeRange(torrent) {
     const name = torrent.name.toLowerCase();
     const fileCount = torrent.torrent_files || 0;
-    const totalSize = torrent.total_size || 0;
     
-    // Series-specific detection
-    if (name.includes('terror') || name.includes('zankyou')) {
-        if (fileCount >= 11 || name.includes('complete') || name.includes('season')) {
-            return '01-11';
-        }
-        if (name.includes('vol.01') || name.includes('volume 1')) return '01-06';
-        if (name.includes('vol.02') || name.includes('volume 2')) return '07-11';
-        if (fileCount === 6) return '01-06';
-        if (fileCount === 5) return '07-11';
+    // 1. Explicit episode ranges in title
+    const rangeMatch = name.match(/(\d{1,2})-(\d{1,2})/);
+    if (rangeMatch) {
+        const start = parseInt(rangeMatch[1]);
+        const end = parseInt(rangeMatch[2]);
+        return `${start.toString().padStart(2, '0')}-${end.toString().padStart(2, '0')}`;
     }
     
-    // Generic detection
-    if (fileCount >= 20) return `01-${fileCount-1} + Extras`;
-    if (fileCount >= 10) return `01-${fileCount:02d}`;
+    // 2. Volume detection (generic for ALL anime)
+    if (name.includes('vol.01') || name.includes('volume 1')) return '01-06';
+    if (name.includes('vol.02') || name.includes('volume 2')) return '07-12';
+    if (name.includes('vol.03') || name.includes('volume 3')) return '13-18';
+    if (name.includes('vol.04') || name.includes('volume 4')) return '19-24';
+    
+    // 3. File count based detection (generic for ALL anime)
+    if (fileCount >= 20) return `01-${(fileCount-1).toString().padStart(2, '0')} + Extras`;
+    if (fileCount >= 10) return `01-${fileCount.toString().padStart(2, '0')}`;  // FIXED SYNTAX
+    if (fileCount >= 5) return `01-${fileCount.toString().padStart(2, '0')}`;
+    
+    // 4. Pack/batch indicators
     if (name.includes('complete') || name.includes('batch') || name.includes('season')) {
         return 'Complete';
     }
@@ -53,10 +58,7 @@ function formatDisplayTitle(name, episodeRange, sizeFormatted = '') {
 
 export default async function handler(req, res) {
     try {
-        // Always fetch fresh database
         const blobUrl = process.env.DATABASE_BLOB_URL;
-        console.log('Fetching from:', blobUrl);
-        
         const response = await fetch(blobUrl);
         if (!response.ok) {
             throw new Error(`HTTP ${response.status}: ${response.statusText}`);
@@ -79,8 +81,6 @@ export default async function handler(req, res) {
             if (torrent && torrent.name.toLowerCase().includes(query)) {
                 const downloadLinks = [];
                 const allLanguages = new Set();
-                
-                // NEW: Detect episode range
                 const episodeRange = detectEpisodeRange(torrent);
                 
                 torrent.subtitle_files.forEach(subFile => {
@@ -88,8 +88,6 @@ export default async function handler(req, res) {
                         const packName = subFile.pack_name || torrent.name.replace(/[^a-zA-Z0-9.-_\s]/g, '').replace(/\s+/g, '.');
                         const packSize = subFile.sizes && subFile.sizes[0] ? subFile.sizes[0] : 2000000;
                         const sizeFormatted = formatSize(packSize);
-                        
-                        // NEW: Enhanced display title with episode range
                         const displayTitle = formatDisplayTitle(torrent.name, episodeRange, sizeFormatted);
                         
                         downloadLinks.push({
@@ -100,8 +98,8 @@ export default async function handler(req, res) {
                             pack_languages: subFile.languages.map(fixLang),
                             size: packSize,
                             size_formatted: sizeFormatted,
-                            episode_range: episodeRange,  // NEW
-                            display_title: displayTitle   // NEW
+                            episode_range: episodeRange,
+                            display_title: displayTitle
                         });
                         
                         subFile.languages.forEach(lang => allLanguages.add(fixLang(lang)));
@@ -131,7 +129,6 @@ export default async function handler(req, res) {
                     download_links: downloadLinks,
                     subtitle_count: downloadLinks.length,
                     torrent_id: parseInt(id),
-                    // NEW: Include torrent metadata
                     torrent_files: torrent.torrent_files || 0,
                     total_size: torrent.total_size || 0,
                     episode_range: episodeRange
