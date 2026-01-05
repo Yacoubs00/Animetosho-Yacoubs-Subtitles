@@ -1,17 +1,19 @@
-// SMART Episode-Aware Kodi API
-// Serves targeted episodes instead of random selection
+// Fixed Kodi API - fetches from Vercel blob storage
+const DATABASE_URL = 'https://uyuh9nxvcluovu3u.public.blob.vercel-storage.com/subtitles.json';
 
-import fs from 'fs';
-import path from 'path';
+let DB = null;
+let lastFetch = 0;
 
-const DATABASE_PATH = path.join(process.cwd(), 'data', 'subtitles.json');
-
-function loadDatabase() {
+async function loadDatabase() {
+    if (DB && Date.now() - lastFetch < 300000) return DB; // 5min cache
+    
     try {
-        const data = fs.readFileSync(DATABASE_PATH, 'utf8');
-        return JSON.parse(data);
+        const response = await fetch(DATABASE_URL);
+        DB = await response.json();
+        lastFetch = Date.now();
+        return DB;
     } catch (error) {
-        console.error('Database load error:', error);
+        console.error('Database fetch error:', error);
         return null;
     }
 }
@@ -33,14 +35,12 @@ function extractEpisodeFromQuery(query) {
 
 function smartPackSelection(subtitleFiles, requestedEpisode) {
     if (!requestedEpisode) {
-        // No specific episode requested - prefer complete pack
         const completePack = subtitleFiles.find(f => 
             f.is_pack && f.pack_type === 'complete'
         );
         return completePack || subtitleFiles[0];
     }
     
-    // Specific episode requested - find targeted pack
     const episodePack = subtitleFiles.find(f => 
         f.is_pack && 
         f.pack_type === 'episode_specific' && 
@@ -49,7 +49,6 @@ function smartPackSelection(subtitleFiles, requestedEpisode) {
     
     if (episodePack) return episodePack;
     
-    // Fallback to individual file for that episode
     const individualFile = subtitleFiles.find(f => 
         !f.is_pack && f.episode_number === requestedEpisode
     );
@@ -61,31 +60,28 @@ function buildDownloadUrl(file, torrentId, torrentName) {
     const baseUrl = 'https://storage.animetosho.org';
     
     if (file.is_pack) {
-        const cleanName = encodeURIComponent(file.pack_name);
+        const cleanName = encodeURIComponent(file.pack_name || torrentName);
         
         if (file.pack_url_type === 'torattachpk') {
-            // Complete pack - use torattachpk
             return `${baseUrl}/torattachpk/${torrentId}/${cleanName}_attachments.7z`;
         } else {
-            // Episode-specific pack - use attachpk
             return `${baseUrl}/attachpk/${torrentId}/${cleanName}_attachments.7z`;
         }
     } else {
-        // Individual file
         const afid = file.afids[0];
         const afidHex = afid.toString(16).padStart(8, '0');
         return `${baseUrl}/attach/${afidHex}/file.xz`;
     }
 }
 
-export default function handler(req, res) {
+export default async function handler(req, res) {
     const { q: query, lang = 'eng' } = req.query;
     
     if (!query) {
         return res.status(400).json({ error: 'Query parameter required' });
     }
     
-    const database = loadDatabase();
+    const database = await loadDatabase();
     if (!database) {
         return res.status(500).json({ error: 'Database unavailable' });
     }
@@ -93,18 +89,15 @@ export default function handler(req, res) {
     const requestedEpisode = extractEpisodeFromQuery(query);
     const results = [];
     
-    // Search torrents
     for (const [torrentId, torrent] of Object.entries(database.torrents)) {
         if (torrent.name.toLowerCase().includes(query.toLowerCase())) {
             
-            // Filter by language
             const languageFiles = torrent.subtitle_files.filter(file => 
                 file.languages.includes(lang)
             );
             
             if (languageFiles.length === 0) continue;
             
-            // SMART: Select best file for the request
             const selectedFile = smartPackSelection(languageFiles, requestedEpisode);
             
             const downloadUrl = buildDownloadUrl(selectedFile, torrentId, torrent.name);
@@ -124,7 +117,6 @@ export default function handler(req, res) {
         }
     }
     
-    // Sort: exact episode matches first, then by size
     results.sort((a, b) => {
         if (a.episode_match !== b.episode_match) {
             return b.episode_match - a.episode_match;
