@@ -249,6 +249,47 @@ def download_and_process():
     with open('data/subtitles.json', 'w') as f:
         json.dump(database, f, separators=(',', ':'))
     
+    # Upload to blob storage if token available
+    import os
+    blob_token = os.environ.get('BLOB_READ_WRITE_TOKEN')
+    if blob_token:
+        try:
+            import subprocess
+            print("🔄 Uploading to Vercel Blob...")
+            
+            # Create upload script
+            upload_script = '''
+import { put } from '@vercel/blob';
+import { readFileSync } from 'fs';
+
+const database = readFileSync('data/subtitles.json', 'utf8');
+const blob = await put('subtitles.json', database, {
+    access: 'public',
+    token: process.env.BLOB_READ_WRITE_TOKEN,
+    addRandomSuffix: false
+});
+console.log('✅ Database uploaded:', blob.url);
+'''
+            
+            with open('upload_temp.mjs', 'w') as f:
+                f.write(upload_script)
+            
+            result = subprocess.run(['node', 'upload_temp.mjs'], 
+                                  capture_output=True, text=True, 
+                                  env={**os.environ, 'BLOB_READ_WRITE_TOKEN': blob_token})
+            
+            if result.returncode == 0:
+                print("✅ Successfully uploaded to blob storage!")
+            else:
+                print(f"❌ Blob upload failed: {result.stderr}")
+                
+            os.remove('upload_temp.mjs')
+            
+        except Exception as e:
+            print(f"⚠️ Blob upload skipped: {e}")
+    else:
+        print("⚠️ No BLOB_READ_WRITE_TOKEN found, skipping upload")
+    
     size_mb = len(json.dumps(database, separators=(',', ':'))) / 1024 / 1024
     print(f"✅ Enhanced database built: {len(final_db)} torrents, {len(language_index)} languages")
     print(f"📊 Size: {size_mb:.1f}MB")
