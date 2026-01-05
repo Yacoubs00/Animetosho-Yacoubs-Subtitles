@@ -1,21 +1,17 @@
-// Fixed Search API - fetches from Vercel blob storage
-const DATABASE_URL = 'https://uyuh9nxvcluovu3u.public.blob.vercel-storage.com/subtitles.json';
-
+// EPISODE-AWARE Search API - Built on working FINAL.js foundation
 let DB = null;
 let lastFetch = 0;
+const CACHE_DURATION = 0;
 
-async function loadDatabase() {
-    if (DB && Date.now() - lastFetch < 300000) return DB; // 5min cache
-    
-    try {
-        const response = await fetch(DATABASE_URL);
-        DB = await response.json();
-        lastFetch = Date.now();
-        return DB;
-    } catch (error) {
-        console.error('Database fetch error:', error);
-        return null;
-    }
+const fixLang = (lang) => {
+    if (lang === 'enm') return 'eng';
+    return lang;
+};
+
+function formatSize(bytes) {
+    if (bytes < 1024) return `${bytes}B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)}KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
 }
 
 function extractEpisodeFromQuery(query) {
@@ -47,53 +43,114 @@ function smartPackSelection(subtitleFiles, requestedEpisode) {
         f.episode_number === requestedEpisode
     );
     
-    return episodePack || subtitleFiles.find(f => 
+    if (episodePack) return episodePack;
+    
+    const individualFile = subtitleFiles.find(f => 
         !f.is_pack && f.episode_number === requestedEpisode
-    ) || subtitleFiles[0];
+    );
+    
+    return individualFile || subtitleFiles[0];
+}
+
+function detectEpisodeRange(torrent) {
+    const name = torrent.name.toLowerCase();
+    const fileCount = torrent.torrent_files || 0;
+    
+    // Volume detection
+    if (name.includes('vol.01') || name.includes('volume 1')) return '01-06';
+    if (name.includes('vol.02') || name.includes('volume 2')) return '07-12';
+    
+    // File count detection
+    if (fileCount >= 11) return `01-${fileCount.toString().padStart(2, '0')}`;
+    if (fileCount >= 6) return '01-06';
+    if (fileCount >= 2 && name.includes('vol.01')) return '01-06';
+    
+    return null;
 }
 
 export default async function handler(req, res) {
-    const { q: query, lang = 'eng' } = req.query;
-    
-    if (!query) {
-        return res.status(400).json({ error: 'Query parameter required' });
-    }
-    
-    const database = await loadDatabase();
-    if (!database) {
-        return res.status(500).json({ error: 'Database unavailable' });
-    }
-    
-    const requestedEpisode = extractEpisodeFromQuery(query);
-    const results = [];
-    
-    for (const [torrentId, torrent] of Object.entries(database.torrents)) {
-        if (torrent.name.toLowerCase().includes(query.toLowerCase())) {
-            const languageFiles = torrent.subtitle_files.filter(file => 
-                file.languages.includes(lang)
-            );
-            
-            if (languageFiles.length === 0) continue;
-            
-            const selectedFile = smartPackSelection(languageFiles, requestedEpisode);
-            
-            results.push({
-                id: torrentId,
-                name: torrent.name,
-                filename: selectedFile.filename,
-                size: Math.max(...selectedFile.sizes),
-                episode_match: selectedFile.episode_number === requestedEpisode,
-                pack_type: selectedFile.pack_type || 'individual'
-            });
+    try {
+        const blobUrl = process.env.DATABASE_BLOB_URL;  // ✅ KEPT WORKING DATABASE LOADING
+        const response = await fetch(blobUrl);
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
         }
-    }
-    
-    results.sort((a, b) => {
-        if (a.episode_match !== b.episode_match) {
-            return b.episode_match - a.episode_match;
+        DB = await response.json();
+        lastFetch = Date.now();
+        
+        const { q, lang, limit = 100 } = req.query;
+        if (!q) return res.status(400).json({ error: 'Query required' });
+        
+        const requestedEpisode = extractEpisodeFromQuery(q);  // ✅ ADDED EPISODE DETECTION
+        const results = [];
+        const query = q.toLowerCase();
+        const candidates = lang && DB.languages[lang] ? DB.languages[lang] : Object.keys(DB.torrents);
+        
+        for (const id of candidates) {
+            if (results.length >= limit) break;
+            
+            const torrent = DB.torrents[id];
+            if (torrent && torrent.name.toLowerCase().includes(query)) {
+                // ✅ SMART: Select best file for the request
+                const languageFiles = torrent.subtitle_files.filter(file => 
+                    !lang || file.languages.includes(lang)
+                );
+                
+                if (languageFiles.length === 0) continue;
+                
+                const selectedFile = smartPackSelection(languageFiles, requestedEpisode);
+                const episodeRange = detectEpisodeRange(torrent);
+                
+                let downloadUrl;
+                if (selectedFile.is_pack) {
+                    const encodedName = encodeURIComponent(selectedFile.pack_name || torrent.name);
+                    
+                    if (selectedFile.pack_url_type === 'torattachpk') {
+                        // Complete pack
+                        downloadUrl = `https://animetosho.org/storage/torattachpk/${id}/${encodedName}_attachments.7z`;
+                    } else {
+                        // Episode-specific pack
+                        downloadUrl = `https://storage.animetosho.org/attachpk/${id}/${encodedName}_attachments.7z`;
+                    }
+                } else {
+                    // Individual file
+                    const afidHex = selectedFile.afids[0].toString(16).padStart(8, '0');
+                    downloadUrl = `https://storage.animetosho.org/attach/${afidHex}/file.xz`;
+                }
+                
+                results.push({
+                    id: id,
+                    name: torrent.name,
+                    filename: selectedFile.filename,
+                    download_url: downloadUrl,
+                    size: Math.max(...selectedFile.sizes),
+                    size_formatted: formatSize(Math.max(...selectedFile.sizes)),
+                    episode_match: selectedFile.episode_number === requestedEpisode,
+                    pack_type: selectedFile.pack_type || 'individual',
+                    episode_range: episodeRange,
+                    languages: selectedFile.languages.map(fixLang)
+                });
+            }
         }
-        return b.size - a.size;
-    });
-    
-    res.json(results.slice(0, 50));
+        
+        // ✅ Sort: exact episode matches first, then by size
+        results.sort((a, b) => {
+            if (a.episode_match !== b.episode_match) {
+                return b.episode_match - a.episode_match;
+            }
+            return b.size - a.size;
+        });
+        
+        res.json({
+            results: results.slice(0, limit),
+            total: results.length,
+            episode_requested: requestedEpisode
+        });
+        
+    } catch (error) {
+        res.status(500).json({
+            error: error.message,
+            debug_url: process.env.DATABASE_BLOB_URL
+        });
+    }
 }
