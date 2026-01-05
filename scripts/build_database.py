@@ -1,32 +1,51 @@
 #!/usr/bin/env python3
-# WORKING Enhanced build_database.py - Properly formatted
+# FIXED build_database.py with 40+ patterns and torattachpk URLs
 
 import json
 import urllib.request
 import lzma
 from collections import defaultdict
 
-# GOAL 4: Robust patterns from 50+ 'und' file analysis
+# EXPANDED: 40+ English patterns
 ENGLISH_FANSUB_GROUPS = {
-    'HorribleSubs', 'FUNi_OCRd', 'Commie', 'Final8', 'DKS', 
-    'Hatsuyuki', 'Live-eviL', 'Critter-Subs', 'Kaylith', 
-    'OTR', 'naisho', 'Pirate King', 'Erai-raws', 'SubsPlease'
-}
-
-DUAL_AUDIO_PATTERNS = {
-    'dual-audio', 'dual audio', 'multi-audio', 'multi audio'
+    # Crunchyroll/Official rips (High confidence)
+    'HorribleSubs', 'Erai-raws', 'SubsPlease', 'Asenshi',
+    
+    # Funimation/Official (High confidence) 
+    'FUNi_OCRd', 'FUNimation', 'Funi', 'SimulDub',
+    
+    # Major English fansub groups (High confidence)
+    'Commie', 'FFF', 'Underwater', 'GJM', 'Kametsu',
+    'Coalgirls', 'UTW', 'gg', 'Mazui', 'WhyNot',
+    'Doki', 'Chihiro', 'Tsundere', 'Vivid', 'Ayako',
+    
+    # BD/Quality groups (High confidence)
+    'Reinforce', 'Thora', 'Exiled-Destiny', 'Static-Subs',
+    'SallySubs', 'Final8', 'ANE', 'Kira-Fansub',
+    
+    # Streaming rips (High confidence)
+    'DKS', 'Hatsuyuki', 'Live-eviL', 'Critter-Subs', 
+    'Kaylith', 'OTR', 'naisho', 'Pirate King',
+    
+    # Additional English groups
+    'THORA', 'Eclipse', 'a4e', 'Ryuumaru', 'Elysium',
+    'Beatrice-Raws', 'ANK-Raws', 'Moozzi2'
 }
 
 ENGLISH_TITLE_PATTERNS = {
-    'english dub', '[eng]', '(english)', 'english sub', 'eng sub', '[english dub]'
+    'english dub', '[eng]', '(english)', 'english sub', 'eng sub', 
+    '[english dub]', 'english audio', 'dub', 'dubbed',
+    'crunchyroll', 'funimation', 'netflix', 'hulu', 'amazon prime',
+    'webrip', 'web-dl', 'hdtv', 'simulcast', 'official subs'
 }
 
-JAPANESE_SERIES = {
-    'precure', 'pretty rhythm', 'jewelpet', 'aikatsu', 'pripara'
+DUAL_AUDIO_PATTERNS = {
+    'dual-audio', 'dual audio', 'multi-audio', 'multi audio',
+    'dual language', 'bilingual', 'eng+jpn', 'jp+en'
 }
 
 def smart_language_detection(lang, torrent_name, filename=''):
-    """GOAL 3: Smart 'und' language detection using patterns"""
+    """Smart 'und' language detection using 40+ patterns"""
     if lang != 'und':
         return lang
     
@@ -48,12 +67,7 @@ def smart_language_detection(lang, torrent_name, filename=''):
         if pattern in name_lower or pattern in file_lower:
             return 'eng'
     
-    # Check for Japanese-only series
-    for series in JAPANESE_SERIES:
-        if series in name_lower:
-            return 'jpn'
-    
-    # GOAL 3: Keep as 'und' when uncertain
+    # Keep as 'und' when uncertain
     return 'und'
 
 def download_and_process():
@@ -78,7 +92,7 @@ def download_and_process():
             print(f"❌ Failed to download {name}: {e}")
             return
 
-    # GOAL 1: Build attachment file size lookup
+    # Build attachment file size lookup
     print("🔄 Building attachment file size lookup...")
     attachment_sizes = {}
     for line in data['attachmentfiles'][1:]:  # Skip header
@@ -116,7 +130,7 @@ def download_and_process():
                             lang = sub.get('lang', 'eng')
                             langs.append(lang)
                             
-                            # GOAL 1: Use ACTUAL file size
+                            # Use ACTUAL file size
                             actual_size = attachment_sizes.get(afid, 50000)
                             sizes.append(actual_size)
                     
@@ -131,7 +145,7 @@ def download_and_process():
 
     print(f"📊 Found {len(subtitle_files)} files with subtitles")
 
-    # GOAL 5: Extract comprehensive torrent metadata
+    # Extract comprehensive torrent metadata
     print("🔄 Processing comprehensive torrent metadata...")
     torrent_metadata = {}
     for line in data['torrents'][1:]:  # Skip header
@@ -172,7 +186,7 @@ def download_and_process():
                     sub_data = subtitle_files[file_id]
                     metadata = torrent_metadata[torrent_id]
                     
-                    # GOAL 2 & 3: Apply smart language detection
+                    # Apply smart language detection with 40+ patterns
                     processed_languages = []
                     for lang in sub_data['languages']:
                         smart_lang = smart_language_detection(lang, metadata['name'], filename)
@@ -182,7 +196,7 @@ def download_and_process():
                         'filename': filename,
                         'afids': sub_data['afids'],
                         'languages': processed_languages,
-                        'sizes': sub_data['sizes']  # GOAL 1: Actual sizes
+                        'sizes': sub_data['sizes']
                     })
                     
                     for lang in processed_languages:
@@ -193,7 +207,7 @@ def download_and_process():
 
     print(f"📊 Found {len(torrents)} torrents with subtitles")
 
-    # GOAL 1 & 5: Enhanced pack detection and database building
+    # Enhanced pack detection and database building
     final_db = {}
     pack_count = 0
     
@@ -212,7 +226,7 @@ def download_and_process():
                 total_subtitle_files += len(sub_file['afids'])
                 total_subtitle_size += sum(sub_file['sizes'])
             
-            # GOAL 1: Enhanced pack detection using actual data
+            # Enhanced pack detection
             has_pack = (
                 total_subtitle_files >= 3 or
                 len(unique_languages) >= 2 or
@@ -226,11 +240,7 @@ def download_and_process():
             )
             
             if has_pack:
-                clean_name = name.replace('[', '').replace(']', '').replace('(', '').replace(')', '')
-                clean_name = ''.join(c for c in clean_name if c.isalnum() or c in '.-_ ')
-                clean_name = '.'.join(clean_name.split())
-                
-                # GOAL 1: Use actual total subtitle size for pack
+                # FIXED: Use original torrent name for torattachpk URL
                 pack_size = max(total_subtitle_size, 2000000)
                 
                 subtitle_files_list.append({
@@ -239,11 +249,10 @@ def download_and_process():
                     'languages': list(unique_languages),
                     'sizes': [pack_size],
                     'is_pack': True,
-                    'pack_name': clean_name
+                    'pack_name': name  # FIXED: Use original name for torattachpk
                 })
                 pack_count += 1
             
-            # GOAL 5: Include comprehensive metadata
             final_db[str(torrent_id)] = {
                 'name': name,
                 'languages': list(torrents[torrent_id]['languages']),
@@ -259,7 +268,7 @@ def download_and_process():
         'torrents': final_db,
         'languages': {lang: [str(tid) for tid in tids] for lang, tids in language_index.items()},
         'build_timestamp': int(__import__('time').time()),
-        'version': '2.0_enhanced'  # Mark as enhanced version
+        'version': '2.1_fixed_patterns_and_urls'
     }
 
     with open('data/subtitles.json', 'w') as f:
@@ -268,7 +277,7 @@ def download_and_process():
     size_mb = len(json.dumps(database, separators=(',', ':'))) / 1024 / 1024
     print(f"✅ Enhanced database built: {len(final_db)} torrents, {len(language_index)} languages")
     print(f"📊 Size: {size_mb:.1f}MB")
-    print(f"🎯 All 5 goals implemented!")
+    print(f"🎯 Fixed with 40+ patterns and torattachpk URLs!")
 
 if __name__ == '__main__':
     download_and_process()
