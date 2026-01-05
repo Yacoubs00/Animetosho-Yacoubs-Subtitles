@@ -1,4 +1,4 @@
-// WORKING Enhanced Kodi API - Fixed JavaScript syntax
+// FIXED Kodi API with torattachpk URLs for complete packs
 let DB = null;
 
 const fixLang = (lang) => {
@@ -59,9 +59,13 @@ export default async function handler(req, res) {
                             displayTitle += ` (Eps ${episodeRange})`;
                         }
                         
+                        // FIXED: Use torattachpk URL for complete packs
+                        const encodedName = encodeURIComponent(packFile.pack_name);
+                        const packUrl = `https://animetosho.org/storage/torattachpk/${id}/${encodedName}_attachments.7z`;
+                        
                         results.push({
                             title: displayTitle,
-                            subtitle_url: `https://storage.animetosho.org/attachpk/${id}/${packFile.pack_name}_attachments.7z`,
+                            subtitle_url: packUrl,  // FIXED: Complete pack URL
                             languages: packFile.languages.map(fixLang),
                             is_pack: true,
                             size: packFile.sizes[0],
@@ -72,7 +76,7 @@ export default async function handler(req, res) {
                             total_size: torrent.total_size || 0
                         });
                     } else {
-                        // Individual files
+                        // Individual files - use attachpk
                         const firstSubFile = torrent.subtitle_files[0];
                         const afidHex = firstSubFile.afids[0].toString(16).padStart(8, '0');
                         
