@@ -1,18 +1,10 @@
-// EPISODE-AWARE Search API - Built on working FINAL.js foundation
-let DB = null;
-let lastFetch = 0;
-const CACHE_DURATION = 0;
+// TURSO-powered Search API - Episode-Aware
+import { createClient } from '@libsql/client';
 
-const fixLang = (lang) => {
-    if (lang === 'enm') return 'eng';
-    return lang;
-};
-
-function formatSize(bytes) {
-    if (bytes < 1024) return `${bytes}B`;
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)}KB`;
-    return `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
-}
+const client = createClient({
+    url: process.env.TURSO_DATABASE_URL,
+    authToken: process.env.TURSO_AUTH_TOKEN
+});
 
 function extractEpisodeFromQuery(query) {
     const patterns = [
@@ -29,128 +21,63 @@ function extractEpisodeFromQuery(query) {
     return null;
 }
 
-function smartPackSelection(subtitleFiles, requestedEpisode) {
-    if (!requestedEpisode) {
-        const completePack = subtitleFiles.find(f => 
-            f.is_pack && f.pack_type === 'complete'
-        );
-        return completePack || subtitleFiles[0];
+export default async function handler(req, res) {
+    const { q: query, lang = 'eng', limit = 50 } = req.query;
+    
+    if (!query) {
+        return res.status(400).json({ error: 'Query parameter required' });
     }
     
-    const episodePack = subtitleFiles.find(f => 
-        f.is_pack && 
-        f.pack_type === 'episode_specific' && 
-        f.episode_number === requestedEpisode
-    );
-    
-    if (episodePack) return episodePack;
-    
-    const individualFile = subtitleFiles.find(f => 
-        !f.is_pack && f.episode_number === requestedEpisode
-    );
-    
-    return individualFile || subtitleFiles[0];
-}
-
-function detectEpisodeRange(torrent) {
-    const name = torrent.name.toLowerCase();
-    const fileCount = torrent.torrent_files || 0;
-    
-    // Volume detection
-    if (name.includes('vol.01') || name.includes('volume 1')) return '01-06';
-    if (name.includes('vol.02') || name.includes('volume 2')) return '07-12';
-    
-    // File count detection
-    if (fileCount >= 11) return `01-${fileCount.toString().padStart(2, '0')}`;
-    if (fileCount >= 6) return '01-06';
-    if (fileCount >= 2 && name.includes('vol.01')) return '01-06';
-    
-    return null;
-}
-
-export default async function handler(req, res) {
     try {
-        const blobUrl = process.env.DATABASE_BLOB_URL;  // ✅ KEPT WORKING DATABASE LOADING
-        const response = await fetch(blobUrl);
-        if (!response.ok) {
-            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-        }
-        DB = await response.json();
-        lastFetch = Date.now();
+        const requestedEpisode = extractEpisodeFromQuery(query);
         
-        const { q, lang, limit = 100 } = req.query;
-        if (!q) return res.status(400).json({ error: 'Query required' });
+        // TURSO SQL Query for Search
+        let sql = `
+            SELECT 
+                t.id,
+                t.name,
+                COUNT(sf.id) as subtitle_count,
+                GROUP_CONCAT(DISTINCT sf.language) as languages,
+                MAX(sf.size) as max_size,
+                COUNT(CASE WHEN sf.episode_number = ? THEN 1 END) as episode_matches
+            FROM torrents t
+            JOIN subtitle_files sf ON t.id = sf.torrent_id
+            WHERE t.name LIKE ?
+        `;
         
-        const requestedEpisode = extractEpisodeFromQuery(q);  // ✅ ADDED EPISODE DETECTION
-        const results = [];
-        const query = q.toLowerCase();
-        const candidates = lang && DB.languages[lang] ? DB.languages[lang] : Object.keys(DB.torrents);
+        const params = [requestedEpisode || 0, `%${query}%`];
         
-        for (const id of candidates) {
-            if (results.length >= limit) break;
-            
-            const torrent = DB.torrents[id];
-            if (torrent && torrent.name.toLowerCase().includes(query)) {
-                // ✅ SMART: Select best file for the request
-                const languageFiles = torrent.subtitle_files.filter(file => 
-                    !lang || file.languages.includes(lang)
-                );
-                
-                if (languageFiles.length === 0) continue;
-                
-                const selectedFile = smartPackSelection(languageFiles, requestedEpisode);
-                const episodeRange = detectEpisodeRange(torrent);
-                
-                let downloadUrl;
-                if (selectedFile.is_pack) {
-                    const encodedName = encodeURIComponent(selectedFile.pack_name || torrent.name);
-                    
-                    if (selectedFile.pack_url_type === 'torattachpk') {
-                        // Complete pack
-                        downloadUrl = `https://animetosho.org/storage/torattachpk/${id}/${encodedName}_attachments.7z`;
-                    } else {
-                        // Episode-specific pack
-                        downloadUrl = `https://storage.animetosho.org/attachpk/${id}/${encodedName}_attachments.7z`;
-                    }
-                } else {
-                    // Individual file
-                    const afidHex = selectedFile.afids[0].toString(16).padStart(8, '0');
-                    downloadUrl = `https://storage.animetosho.org/attach/${afidHex}/file.xz`;
-                }
-                
-                results.push({
-                    id: id,
-                    name: torrent.name,
-                    filename: selectedFile.filename,
-                    download_url: downloadUrl,
-                    size: Math.max(...selectedFile.sizes),
-                    size_formatted: formatSize(Math.max(...selectedFile.sizes)),
-                    episode_match: selectedFile.episode_number === requestedEpisode,
-                    pack_type: selectedFile.pack_type || 'individual',
-                    episode_range: episodeRange,
-                    languages: selectedFile.languages.map(fixLang)
-                });
-            }
+        if (lang !== 'all') {
+            sql += ` AND sf.language = ?`;
+            params.push(lang);
         }
         
-        // ✅ Sort: exact episode matches first, then by size
-        results.sort((a, b) => {
-            if (a.episode_match !== b.episode_match) {
-                return b.episode_match - a.episode_match;
-            }
-            return b.size - a.size;
-        });
+        sql += ` 
+            GROUP BY t.id, t.name
+            ORDER BY episode_matches DESC, max_size DESC
+            LIMIT ?
+        `;
+        params.push(parseInt(limit));
+        
+        const result = await client.execute({ sql, args: params });
+        
+        const results = result.rows.map(row => ({
+            id: row.id,
+            name: row.name,
+            subtitle_count: row.subtitle_count,
+            languages: row.languages ? row.languages.split(',') : [],
+            size: row.max_size,
+            episode_match: row.episode_matches > 0
+        }));
         
         res.json({
-            results: results.slice(0, limit),
+            results,
             total: results.length,
             episode_requested: requestedEpisode
         });
         
     } catch (error) {
-        res.status(500).json({
-            error: error.message,
-            debug_url: process.env.DATABASE_BLOB_URL
-        });
+        console.error('TURSO search error:', error);
+        res.status(500).json({ error: 'Database search failed' });
     }
 }
