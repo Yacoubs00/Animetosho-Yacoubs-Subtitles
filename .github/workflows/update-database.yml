@@ -1,4 +1,4 @@
-name: Update Database
+name: Update TURSO Database
 on:
   schedule:
     - cron: '0 6 * * *'
@@ -9,50 +9,25 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          lfs: true
       
       - name: Setup Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.11'
-      
+          
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '18'
-      
+          
       - name: Install dependencies
-        run: npm install @vercel/blob
-      
-      - name: Build Database
+        run: npm install @libsql/client
+        
+      - name: Build TURSO Database
+        env:
+          TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
+          TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL }}
         run: |
           mkdir -p data
           python scripts/build_database.py
-      
-      - name: Create upload script
-        run: |
-          cat > upload.mjs << 'EOF'
-          import { put } from '@vercel/blob';
-          import { readFileSync } from 'fs';
-          
-          const database = readFileSync('data/subtitles.json', 'utf8');
-          
-          try {
-            const blob = await put('subtitles.json', database, {
-              access: 'public',
-              token: process.env.BLOB_READ_WRITE_TOKEN,
-              addRandomSuffix: false
-            });
-            
-            console.log('✅ Database uploaded to fixed URL:', blob.url);
-          } catch (error) {
-            console.error('❌ Upload failed:', error);
-            process.exit(1);
-          }
-          EOF
-      
-      - name: Upload to Vercel Blob with Fixed Name
-        env:
-          BLOB_READ_WRITE_TOKEN: ${{ secrets.BLOB_READ_WRITE_TOKEN }}
-        run: node upload.mjs
+
