@@ -1,10 +1,5 @@
 #!/usr/bin/env python3
-# Enhanced build_database.py - Implements all 5 goals
-# 1. Fix pack detection with actual sizes
-# 2. Language accuracy 
-# 3. Smart 'und' detection (using Step 3 patterns)
-# 4. Robust pattern analysis (from 50+ samples)
-# 5. Maximum database optimization
+# WORKING Enhanced build_database.py - Properly formatted
 
 import json
 import urllib.request
@@ -67,7 +62,7 @@ def download_and_process():
         'torrents': 'https://storage.animetosho.org/dbexport/torrents-latest.txt.xz',
         'files': 'https://storage.animetosho.org/dbexport/files-latest.txt.xz',
         'attachments': 'https://storage.animetosho.org/dbexport/attachments-latest.txt.xz',
-        'attachmentfiles': 'https://storage.animetosho.org/dbexport/attachmentfiles-latest.txt.xz'  # GOAL 1: Get actual sizes
+        'attachmentfiles': 'https://storage.animetosho.org/dbexport/attachmentfiles-latest.txt.xz'
     }
     
     data = {}
@@ -118,9 +113,7 @@ def download_and_process():
                             afid = sub['_afid']
                             afids.append(afid)
                             
-                            # GOAL 2 & 3: Smart language detection
                             lang = sub.get('lang', 'eng')
-                            # Will be processed later with torrent name context
                             langs.append(lang)
                             
                             # GOAL 1: Use ACTUAL file size
@@ -276,11 +269,6 @@ def download_and_process():
     print(f"✅ Enhanced database built: {len(final_db)} torrents, {len(language_index)} languages")
     print(f"📊 Size: {size_mb:.1f}MB")
     print(f"🎯 All 5 goals implemented!")
-    print(f"   1. ✅ Pack detection with actual sizes")
-    print(f"   2. ✅ Language accuracy improved") 
-    print(f"   3. ✅ Smart 'und' detection")
-    print(f"   4. ✅ Robust patterns from 50+ samples")
-    print(f"   5. ✅ Maximum database optimization")
 
 if __name__ == '__main__':
     download_and_process()
