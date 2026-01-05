@@ -1,7 +1,22 @@
-// Episode-Aware Search API (minimal changes to existing)
-import fs from 'fs';
+// Fixed Search API - fetches from Vercel blob storage
+const DATABASE_URL = 'https://uyuh9nxvcluovu3u.public.blob.vercel-storage.com/subtitles.json';
 
 let DB = null;
+let lastFetch = 0;
+
+async function loadDatabase() {
+    if (DB && Date.now() - lastFetch < 300000) return DB; // 5min cache
+    
+    try {
+        const response = await fetch(DATABASE_URL);
+        DB = await response.json();
+        lastFetch = Date.now();
+        return DB;
+    } catch (error) {
+        console.error('Database fetch error:', error);
+        return null;
+    }
+}
 
 function extractEpisodeFromQuery(query) {
     const patterns = [
@@ -37,17 +52,22 @@ function smartPackSelection(subtitleFiles, requestedEpisode) {
     ) || subtitleFiles[0];
 }
 
-export default function handler(req, res) {
+export default async function handler(req, res) {
     const { q: query, lang = 'eng' } = req.query;
     
-    if (!DB) {
-        DB = JSON.parse(fs.readFileSync('data/subtitles.json', 'utf8'));
+    if (!query) {
+        return res.status(400).json({ error: 'Query parameter required' });
+    }
+    
+    const database = await loadDatabase();
+    if (!database) {
+        return res.status(500).json({ error: 'Database unavailable' });
     }
     
     const requestedEpisode = extractEpisodeFromQuery(query);
     const results = [];
     
-    for (const [torrentId, torrent] of Object.entries(DB.torrents)) {
+    for (const [torrentId, torrent] of Object.entries(database.torrents)) {
         if (torrent.name.toLowerCase().includes(query.toLowerCase())) {
             const languageFiles = torrent.subtitle_files.filter(file => 
                 file.languages.includes(lang)
