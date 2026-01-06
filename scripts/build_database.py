@@ -404,15 +404,18 @@ def download_and_process():
             turso_url = os.environ.get('TURSO_DATABASE_URL')
             turso_token = os.environ.get('TURSO_AUTH_TOKEN')
             
-            # Convert libsql:// URL to HTTP API URL
-            api_url = turso_url.replace('libsql://', 'https://').replace('.turso.io', '.turso.io/v2/pipeline')
+            # Convert libsql:// URL to HTTP API URL properly
+            if turso_url.startswith('libsql://'):
+                api_url = turso_url.replace('libsql://', 'https://') + '/v2/pipeline'
+            else:
+                api_url = turso_url + '/v2/pipeline'
             
             headers = {
                 'Authorization': f'Bearer {turso_token}',
                 'Content-Type': 'application/json'
             }
             
-            # Create tables and insert test data
+            # Create tables and insert test data with proper TURSO HTTP API format
             pipeline = {
                 "requests": [
                     {"type": "execute", "stmt": {"sql": "DROP TABLE IF EXISTS subtitle_files"}},
@@ -457,11 +460,12 @@ def download_and_process():
                         {"type": "integer", "value": "0"},
                         {"type": "text", "value": "eng"},
                         {"type": "integer", "value": "5500000"},
-                        {"type": "null", "value": null},
+                        {"type": "null"},
                         {"type": "integer", "value": "1"},
                         {"type": "text", "value": "complete"},
                         {"type": "text", "value": "torattachpk"}
-                    ]}}
+                    ]}},
+                    {"type": "close"}
                 ]
             }
             
