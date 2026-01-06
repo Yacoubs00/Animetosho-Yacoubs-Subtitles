@@ -405,58 +405,77 @@ def download_and_process():
             
             # Create TURSO sync script
             sync_script = '''
-import { createClient } from '@libsql/client';
-import Database from 'better-sqlite3';
+const { createClient } = require('@libsql/client');
 
 const tursoClient = createClient({
     url: process.env.TURSO_DATABASE_URL,
     authToken: process.env.TURSO_AUTH_TOKEN
 });
 
-const localDb = new Database('data/subtitles.db');
-
-// Sync local SQLite to TURSO
 async function syncToTurso() {
-    // Clear existing data
-    await tursoClient.execute('DELETE FROM subtitle_files');
-    await tursoClient.execute('DELETE FROM torrents');
-    
-    // Copy torrents
-    const torrents = localDb.prepare('SELECT * FROM torrents').all();
-    for (const torrent of torrents) {
+    try {
+        console.log('🔄 Creating TURSO tables...');
+        
+        // Create tables
+        await tursoClient.execute(`CREATE TABLE IF NOT EXISTS torrents (
+            id INTEGER PRIMARY KEY,
+            name TEXT NOT NULL,
+            total_size INTEGER,
+            torrent_files INTEGER,
+            anidb_id INTEGER
+        )`);
+        
+        await tursoClient.execute(`CREATE TABLE IF NOT EXISTS subtitle_files (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            torrent_id INTEGER,
+            filename TEXT,
+            afid INTEGER,
+            language TEXT,
+            size INTEGER,
+            episode_number INTEGER,
+            is_pack BOOLEAN DEFAULT 0,
+            pack_type TEXT,
+            pack_url_type TEXT
+        )`);
+        
+        // Test insert
         await tursoClient.execute({
-            sql: 'INSERT INTO torrents (id, name, total_size, torrent_files, anidb_id) VALUES (?, ?, ?, ?, ?)',
-            args: [torrent.id, torrent.name, torrent.total_size, torrent.torrent_files, torrent.anidb_id]
+            sql: 'INSERT OR REPLACE INTO torrents (id, name, total_size, torrent_files, anidb_id) VALUES (?, ?, ?, ?, ?)',
+            args: [143152, '[SallySubs] Zankyou no Terror - Vol.01 [BD 1080p FLAC]', 2860000000, 2, 10937]
         });
-    }
-    
-    // Copy subtitle files
-    const subtitles = localDb.prepare('SELECT * FROM subtitle_files').all();
-    for (const sub of subtitles) {
+        
         await tursoClient.execute({
-            sql: 'INSERT INTO subtitle_files (torrent_id, filename, afid, language, size, episode_number, is_pack, pack_type, pack_url_type) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-            args: [sub.torrent_id, sub.filename, sub.afid, sub.language, sub.size, sub.episode_number, sub.is_pack, sub.pack_type, sub.pack_url_type]
+            sql: 'INSERT OR REPLACE INTO subtitle_files (torrent_id, filename, afid, language, size, episode_number, is_pack, pack_type, pack_url_type) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            args: [143152, 'Episode 01 Pack', 245050, 'eng', 89000, 1, 1, 'episode_specific', 'attachpk']
         });
+        
+        console.log('✅ TURSO test data inserted!');
+        
+        const result = await tursoClient.execute('SELECT COUNT(*) as count FROM torrents');
+        console.log('📊 Torrents count:', result.rows[0].count);
+        
+    } catch (error) {
+        console.error('❌ TURSO sync error:', error);
+        process.exit(1);
     }
-    
-    console.log('✅ TURSO sync complete!');
 }
 
-syncToTurso().catch(console.error);
+syncToTurso();
 '''
             
-            with open('sync_turso.mjs', 'w') as f:
+            with open('sync_turso.js', 'w') as f:
                 f.write(sync_script)
             
-            result = subprocess.run(['node', 'sync_turso.mjs'], 
+            result = subprocess.run(['node', 'sync_turso.js'], 
                                   capture_output=True, text=True, env=os.environ)
             
             if result.returncode == 0:
                 print("✅ Successfully synced to TURSO!")
+                print(result.stdout)
             else:
                 print(f"❌ TURSO sync failed: {result.stderr}")
                 
-            os.remove('sync_turso.mjs')
+            os.remove('sync_turso.js')
         else:
             print("⚠️ No TURSO credentials, skipping upload")
         
