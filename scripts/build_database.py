@@ -367,8 +367,6 @@ def download_and_process():
     print("🔄 Uploading to TURSO database...")
     try:
         import os
-        import urllib.request
-        import urllib.parse
         
         turso_url = os.environ.get('TURSO_DATABASE_URL')
         turso_token = os.environ.get('TURSO_AUTH_TOKEN')
