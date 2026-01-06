@@ -397,85 +397,51 @@ def download_and_process():
         db_size = os.path.getsize('data/subtitles.db') / 1024 / 1024
         print(f"✅ TURSO SQLite database created: {db_size:.1f}MB")
         
-        # ✅ UPLOAD to TURSO
+        # ✅ TURSO: Direct HTTP API population (no Node.js dependencies)
         if os.environ.get('TURSO_AUTH_TOKEN') and os.environ.get('TURSO_DATABASE_URL'):
-            print("🔄 Uploading to TURSO...")
+            print("🔄 Populating TURSO via HTTP API...")
             
-            import subprocess  # ✅ ADDED: Import subprocess
+            turso_url = os.environ.get('TURSO_DATABASE_URL')
+            turso_token = os.environ.get('TURSO_AUTH_TOKEN')
             
-            # Create TURSO sync script
-            sync_script = '''
-const { createClient } = require('@libsql/client');
-
-const tursoClient = createClient({
-    url: process.env.TURSO_DATABASE_URL,
-    authToken: process.env.TURSO_AUTH_TOKEN
-});
-
-async function syncToTurso() {
-    try {
-        console.log('🔄 Creating TURSO tables...');
-        
-        // Create tables
-        await tursoClient.execute(`CREATE TABLE IF NOT EXISTS torrents (
-            id INTEGER PRIMARY KEY,
-            name TEXT NOT NULL,
-            total_size INTEGER,
-            torrent_files INTEGER,
-            anidb_id INTEGER
-        )`);
-        
-        await tursoClient.execute(`CREATE TABLE IF NOT EXISTS subtitle_files (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            torrent_id INTEGER,
-            filename TEXT,
-            afid INTEGER,
-            language TEXT,
-            size INTEGER,
-            episode_number INTEGER,
-            is_pack BOOLEAN DEFAULT 0,
-            pack_type TEXT,
-            pack_url_type TEXT
-        )`);
-        
-        // Test insert
-        await tursoClient.execute({
-            sql: 'INSERT OR REPLACE INTO torrents (id, name, total_size, torrent_files, anidb_id) VALUES (?, ?, ?, ?, ?)',
-            args: [143152, '[SallySubs] Zankyou no Terror - Vol.01 [BD 1080p FLAC]', 2860000000, 2, 10937]
-        });
-        
-        await tursoClient.execute({
-            sql: 'INSERT OR REPLACE INTO subtitle_files (torrent_id, filename, afid, language, size, episode_number, is_pack, pack_type, pack_url_type) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-            args: [143152, 'Episode 01 Pack', 245050, 'eng', 89000, 1, 1, 'episode_specific', 'attachpk']
-        });
-        
-        console.log('✅ TURSO test data inserted!');
-        
-        const result = await tursoClient.execute('SELECT COUNT(*) as count FROM torrents');
-        console.log('📊 Torrents count:', result.rows[0].count);
-        
-    } catch (error) {
-        console.error('❌ TURSO sync error:', error);
-        process.exit(1);
-    }
-}
-
-syncToTurso();
-'''
+            # Convert libsql:// URL to HTTP API URL
+            api_url = turso_url.replace('libsql://', 'https://').replace('.turso.io', '.turso.io/v2/pipeline')
             
-            with open('sync_turso.js', 'w') as f:
-                f.write(sync_script)
+            headers = {
+                'Authorization': f'Bearer {turso_token}',
+                'Content-Type': 'application/json'
+            }
             
-            result = subprocess.run(['node', 'sync_turso.js'], 
-                                  capture_output=True, text=True, env=os.environ)
+            # Create tables and insert test data
+            pipeline = {
+                "requests": [
+                    {"type": "execute", "stmt": {"sql": "DROP TABLE IF EXISTS subtitle_files"}},
+                    {"type": "execute", "stmt": {"sql": "DROP TABLE IF EXISTS torrents"}},
+                    {"type": "execute", "stmt": {"sql": "CREATE TABLE torrents (id INTEGER PRIMARY KEY, name TEXT NOT NULL, total_size INTEGER, torrent_files INTEGER, anidb_id INTEGER)"}},
+                    {"type": "execute", "stmt": {"sql": "CREATE TABLE subtitle_files (id INTEGER PRIMARY KEY AUTOINCREMENT, torrent_id INTEGER, filename TEXT, afid INTEGER, language TEXT, size INTEGER, episode_number INTEGER, is_pack BOOLEAN DEFAULT 0, pack_type TEXT, pack_url_type TEXT)"}},
+                    {"type": "execute", "stmt": {"sql": "CREATE INDEX idx_torrent_name ON torrents(name)"}},
+                    {"type": "execute", "stmt": {"sql": "CREATE INDEX idx_language ON subtitle_files(language)"}},
+                    {"type": "execute", "stmt": {"sql": "CREATE INDEX idx_episode ON subtitle_files(episode_number)"}},
+                    {"type": "execute", "stmt": {"sql": "INSERT INTO torrents (id, name, total_size, torrent_files, anidb_id) VALUES (?, ?, ?, ?, ?)", "args": [143152, "[SallySubs] Zankyou no Terror - Vol.01 [BD 1080p FLAC]", 2860000000, 2, 10937]}},
+                    {"type": "execute", "stmt": {"sql": "INSERT INTO subtitle_files (torrent_id, filename, afid, language, size, episode_number, is_pack, pack_type, pack_url_type) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", "args": [143152, "Episode 01 Pack", 245050, "eng", 89000, 1, 1, "episode_specific", "attachpk"]}},
+                    {"type": "execute", "stmt": {"sql": "INSERT INTO subtitle_files (torrent_id, filename, afid, language, size, episode_number, is_pack, pack_type, pack_url_type) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", "args": [143152, "Episode 02 Pack", 245051, "eng", 91000, 2, 1, "episode_specific", "attachpk"]}},
+                    {"type": "execute", "stmt": {"sql": "INSERT INTO subtitle_files (torrent_id, filename, afid, language, size, episode_number, is_pack, pack_type, pack_url_type) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", "args": [143152, "All Attachments (Complete Pack)", 0, "eng", 5500000, None, 1, "complete", "torattachpk"]}}
+                ]
+            }
             
-            if result.returncode == 0:
-                print("✅ Successfully synced to TURSO!")
-                print(result.stdout)
-            else:
-                print(f"❌ TURSO sync failed: {result.stderr}")
+            try:
+                import requests
+                response = requests.post(api_url, json=pipeline, headers=headers, timeout=30)
                 
-            os.remove('sync_turso.js')
+                if response.status_code == 200:
+                    print("✅ TURSO populated via HTTP API!")
+                    print(f"📊 Executed {len(pipeline['requests'])} statements")
+                else:
+                    print(f"❌ TURSO API error: {response.status_code}")
+                    print(f"Response: {response.text}")
+                    
+            except Exception as e:
+                print(f"❌ TURSO HTTP population failed: {e}")
         else:
             print("⚠️ No TURSO credentials, skipping upload")
         
