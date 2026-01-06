@@ -1,9 +1,11 @@
 {
-  "name": "animetosho-yacoubs-subtitles",
+  "name": "animetosho-subtitles",
   "version": "1.0.0",
   "type": "module",
   "dependencies": {
-    "@libsql/client": "^0.4.0",
-    "better-sqlite3": "^9.2.2"
+    "@libsql/client": "^0.14.0"
+  },
+  "scripts": {
+    "build": "echo 'No build needed'"
   }
 }
