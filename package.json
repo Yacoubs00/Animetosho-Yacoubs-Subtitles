@@ -1,7 +1,9 @@
 {
-  "name": "animetosho-attachments-viewer",
+  "name": "animetosho-yacoubs-subtitles",
   "version": "1.0.0",
+  "type": "module",
   "dependencies": {
-    "@libsql/client": "^0.4.0"
+    "@libsql/client": "^0.4.0",
+    "better-sqlite3": "^9.2.2"
   }
 }
