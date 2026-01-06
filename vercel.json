@@ -1,12 +1,7 @@
-{
-  "functions": {
-    "api/*.js": {
-      "runtime": "@vercel/node@2.15.10"
-    }
-  },
-  "build": {
-    "env": {
-      "NODE_VERSION": "18"
-    }
-  }
-}
+ {
+   "functions": {
+     "api/*.js": {
+       "runtime": "nodejs24.x"
+     }
+   }
+ }
