@@ -397,6 +397,67 @@ def download_and_process():
         db_size = os.path.getsize('data/subtitles.db') / 1024 / 1024
         print(f"✅ TURSO SQLite database created: {db_size:.1f}MB")
         
+        # ✅ UPLOAD to TURSO
+        if os.environ.get('TURSO_AUTH_TOKEN') and os.environ.get('TURSO_DATABASE_URL'):
+            print("🔄 Uploading to TURSO...")
+            
+            # Create TURSO sync script
+            sync_script = '''
+import { createClient } from '@libsql/client';
+import Database from 'better-sqlite3';
+
+const tursoClient = createClient({
+    url: process.env.TURSO_DATABASE_URL,
+    authToken: process.env.TURSO_AUTH_TOKEN
+});
+
+const localDb = new Database('data/subtitles.db');
+
+// Sync local SQLite to TURSO
+async function syncToTurso() {
+    // Clear existing data
+    await tursoClient.execute('DELETE FROM subtitle_files');
+    await tursoClient.execute('DELETE FROM torrents');
+    
+    // Copy torrents
+    const torrents = localDb.prepare('SELECT * FROM torrents').all();
+    for (const torrent of torrents) {
+        await tursoClient.execute({
+            sql: 'INSERT INTO torrents (id, name, total_size, torrent_files, anidb_id) VALUES (?, ?, ?, ?, ?)',
+            args: [torrent.id, torrent.name, torrent.total_size, torrent.torrent_files, torrent.anidb_id]
+        });
+    }
+    
+    // Copy subtitle files
+    const subtitles = localDb.prepare('SELECT * FROM subtitle_files').all();
+    for (const sub of subtitles) {
+        await tursoClient.execute({
+            sql: 'INSERT INTO subtitle_files (torrent_id, filename, afid, language, size, episode_number, is_pack, pack_type, pack_url_type) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            args: [sub.torrent_id, sub.filename, sub.afid, sub.language, sub.size, sub.episode_number, sub.is_pack, sub.pack_type, sub.pack_url_type]
+        });
+    }
+    
+    console.log('✅ TURSO sync complete!');
+}
+
+syncToTurso().catch(console.error);
+'''
+            
+            with open('sync_turso.mjs', 'w') as f:
+                f.write(sync_script)
+            
+            result = subprocess.run(['node', 'sync_turso.mjs'], 
+                                  capture_output=True, text=True, env=os.environ)
+            
+            if result.returncode == 0:
+                print("✅ Successfully synced to TURSO!")
+            else:
+                print(f"❌ TURSO sync failed: {result.stderr}")
+                
+            os.remove('sync_turso.mjs')
+        else:
+            print("⚠️ No TURSO credentials, skipping upload")
+        
     except Exception as e:
         print(f"⚠️ SQLite creation failed: {e}")
     
