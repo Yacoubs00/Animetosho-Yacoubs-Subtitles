@@ -474,7 +474,7 @@ def download_and_process():
             check_requests = [
                 {
                     "type": "execute",
-                    "stmt": {"sql": "SELECT MAX(id) as max_id, COUNT(*) as count FROM torrents"}
+                    "stmt": {"sql": "SELECT COALESCE(MAX(id), 0) as max_id, COUNT(*) as count FROM torrents"}
                 },
                 {"type": "close"}
             ]
@@ -492,18 +492,38 @@ def download_and_process():
             with urllib.request.urlopen(req) as response:
                 result = json.loads(response.read().decode('utf-8'))
                 
-            # Parse existing data
+            # Parse existing data - handle TURSO response format properly
             existing_count = 0
             max_existing_id = 0
-            if result.get('results') and len(result['results']) > 0:
-                response_data = result['results'][0].get('response', {})
-                if response_data.get('type') == 'execute':
-                    rows = response_data.get('result', {}).get('rows', [])
-                    if rows and len(rows) > 0:
-                        max_existing_id = int(rows[0][0]) if rows[0][0] is not None else 0
-                        existing_count = int(rows[0][1]) if rows[0][1] is not None else 0
             
-            print(f"📊 Found {existing_count} existing torrents, max ID: {max_existing_id}")
+            try:
+                if result.get('results') and len(result['results']) > 0:
+                    response_data = result['results'][0].get('response', {})
+                    if response_data.get('type') == 'execute':
+                        result_data = response_data.get('result', {})
+                        rows = result_data.get('rows', [])
+                        if rows and len(rows) > 0 and len(rows[0]) >= 2:
+                            # Handle both direct values and wrapped values
+                            max_val = rows[0][0]
+                            count_val = rows[0][1]
+                            
+                            # Extract actual values (handle string, int, or dict format)
+                            if isinstance(max_val, dict) and 'value' in max_val:
+                                max_existing_id = int(max_val['value']) if max_val['value'] is not None else 0
+                            else:
+                                max_existing_id = int(max_val) if max_val is not None else 0
+                                
+                            if isinstance(count_val, dict) and 'value' in count_val:
+                                existing_count = int(count_val['value']) if count_val['value'] is not None else 0
+                            else:
+                                existing_count = int(count_val) if count_val is not None else 0
+                                
+                print(f"📊 Found {existing_count} existing torrents, max ID: {max_existing_id}")
+                
+            except Exception as e:
+                print(f"🔄 Fresh database (no existing data): {e}")
+                existing_count = 0
+                max_existing_id = 0
             
             # Filter to only new/updated torrents
             torrents_to_upload = {}
@@ -582,8 +602,22 @@ def download_and_process():
                     }
                 )
                 
-                with urllib.request.urlopen(req) as response:
-                    result = json.loads(response.read().decode('utf-8'))
+                try:
+                    with urllib.request.urlopen(req) as response:
+                        result = json.loads(response.read().decode('utf-8'))
+                        
+                    # Check for errors in batch
+                    if 'results' in result:
+                        error_count = 0
+                        for res in result['results']:
+                            if res.get('type') == 'error':
+                                error_count += 1
+                        if error_count > 0:
+                            print(f"⚠️ Batch {batch_num + 1}: {error_count} errors in batch")
+                    
+                except Exception as e:
+                    print(f"❌ Batch {batch_num + 1} failed: {e}")
+                    continue
                 
                 uploaded_count = (batch_num + 1) * batch_size
                 if uploaded_count > len(torrents_to_upload):
