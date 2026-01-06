@@ -422,10 +422,46 @@ def download_and_process():
                     {"type": "execute", "stmt": {"sql": "CREATE INDEX idx_torrent_name ON torrents(name)"}},
                     {"type": "execute", "stmt": {"sql": "CREATE INDEX idx_language ON subtitle_files(language)"}},
                     {"type": "execute", "stmt": {"sql": "CREATE INDEX idx_episode ON subtitle_files(episode_number)"}},
-                    {"type": "execute", "stmt": {"sql": "INSERT INTO torrents (id, name, total_size, torrent_files, anidb_id) VALUES (?, ?, ?, ?, ?)", "args": [143152, "[SallySubs] Zankyou no Terror - Vol.01 [BD 1080p FLAC]", 2860000000, 2, 10937]}},
-                    {"type": "execute", "stmt": {"sql": "INSERT INTO subtitle_files (torrent_id, filename, afid, language, size, episode_number, is_pack, pack_type, pack_url_type) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", "args": [143152, "Episode 01 Pack", 245050, "eng", 89000, 1, True, "episode_specific", "attachpk"]}},
-                    {"type": "execute", "stmt": {"sql": "INSERT INTO subtitle_files (torrent_id, filename, afid, language, size, episode_number, is_pack, pack_type, pack_url_type) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", "args": [143152, "Episode 02 Pack", 245051, "eng", 91000, 2, True, "episode_specific", "attachpk"]}},
-                    {"type": "execute", "stmt": {"sql": "INSERT INTO subtitle_files (torrent_id, filename, afid, language, size, episode_number, is_pack, pack_type, pack_url_type) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", "args": [143152, "All Attachments (Complete Pack)", 0, "eng", 5500000, None, True, "complete", "torattachpk"]}}
+                    {"type": "execute", "stmt": {"sql": "INSERT INTO torrents (id, name, total_size, torrent_files, anidb_id) VALUES (?, ?, ?, ?, ?)", "args": [
+                        {"type": "integer", "value": "143152"},
+                        {"type": "text", "value": "[SallySubs] Zankyou no Terror - Vol.01 [BD 1080p FLAC]"},
+                        {"type": "integer", "value": "2860000000"},
+                        {"type": "integer", "value": "2"},
+                        {"type": "integer", "value": "10937"}
+                    ]}},
+                    {"type": "execute", "stmt": {"sql": "INSERT INTO subtitle_files (torrent_id, filename, afid, language, size, episode_number, is_pack, pack_type, pack_url_type) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", "args": [
+                        {"type": "integer", "value": "143152"},
+                        {"type": "text", "value": "Episode 01 Pack"},
+                        {"type": "integer", "value": "245050"},
+                        {"type": "text", "value": "eng"},
+                        {"type": "integer", "value": "89000"},
+                        {"type": "integer", "value": "1"},
+                        {"type": "integer", "value": "1"},
+                        {"type": "text", "value": "episode_specific"},
+                        {"type": "text", "value": "attachpk"}
+                    ]}},
+                    {"type": "execute", "stmt": {"sql": "INSERT INTO subtitle_files (torrent_id, filename, afid, language, size, episode_number, is_pack, pack_type, pack_url_type) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", "args": [
+                        {"type": "integer", "value": "143152"},
+                        {"type": "text", "value": "Episode 02 Pack"},
+                        {"type": "integer", "value": "245051"},
+                        {"type": "text", "value": "eng"},
+                        {"type": "integer", "value": "91000"},
+                        {"type": "integer", "value": "2"},
+                        {"type": "integer", "value": "1"},
+                        {"type": "text", "value": "episode_specific"},
+                        {"type": "text", "value": "attachpk"}
+                    ]}},
+                    {"type": "execute", "stmt": {"sql": "INSERT INTO subtitle_files (torrent_id, filename, afid, language, size, episode_number, is_pack, pack_type, pack_url_type) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", "args": [
+                        {"type": "integer", "value": "143152"},
+                        {"type": "text", "value": "All Attachments (Complete Pack)"},
+                        {"type": "integer", "value": "0"},
+                        {"type": "text", "value": "eng"},
+                        {"type": "integer", "value": "5500000"},
+                        {"type": "null", "value": null},
+                        {"type": "integer", "value": "1"},
+                        {"type": "text", "value": "complete"},
+                        {"type": "text", "value": "torattachpk"}
+                    ]}}
                 ]
             }
             
