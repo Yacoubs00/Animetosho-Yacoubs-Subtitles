@@ -401,6 +401,8 @@ def download_and_process():
         if os.environ.get('TURSO_AUTH_TOKEN') and os.environ.get('TURSO_DATABASE_URL'):
             print("🔄 Uploading to TURSO...")
             
+            import subprocess  # ✅ ADDED: Import subprocess
+            
             # Create TURSO sync script
             sync_script = '''
 import { createClient } from '@libsql/client';
