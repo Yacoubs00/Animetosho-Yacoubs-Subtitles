@@ -194,12 +194,8 @@ def download_and_process():
     # Extract comprehensive torrent metadata
     print("🔄 Processing comprehensive torrent metadata...")
     torrent_metadata = {}
-    debug_count = 0
     for line in data['torrents'][1:]:  # Skip header
         parts = line.strip().split('\t')
-        debug_count += 1
-        if debug_count <= 3:  # Debug first 3 lines
-            print(f"🐛 Line {debug_count}: parts[0]='{parts[0]}', parts[1]='{parts[1] if len(parts) > 1 else 'N/A'}', parts[4]='{parts[4] if len(parts) > 4 else 'N/A'}'")
         
         if len(parts) >= 28:
             try:
@@ -213,8 +209,6 @@ def download_and_process():
                         continue
                 
                 if torrent_id is None:
-                    if debug_count <= 3:
-                        print(f"🐛 No valid torrent_id found in first 3 positions")
                     continue
                 
                 # Find name field (usually after torrent_id)
@@ -229,17 +223,10 @@ def download_and_process():
                     'torrent_files': torrent_files,
                     'anidb_id': anidb_id
                 }
-                
-                if debug_count <= 3:
-                    print(f"🐛 Successfully parsed torrent {torrent_id}: {name[:50]}...")
                     
             except Exception as e:
-                if debug_count <= 3:
-                    print(f"🐛 Parse error line {debug_count}: {e}")
                 continue
         else:
-            if debug_count <= 3:
-                print(f"🐛 Line {debug_count} too short: {len(parts)} < 28")
             continue
     
     print(f"📊 Processed metadata for {len(torrent_metadata)} torrents")
@@ -392,7 +379,7 @@ def download_and_process():
     with open('data/subtitles.json', 'w') as f:
         json.dump(database, f, separators=(',', ':'))
 
-    # Upload to TURSO using HTTP API (Official Format)
+    # Upload to TURSO using HTTP API (Optimized with Batching + Incremental Updates)
     print("🔄 Uploading to TURSO database...")
     try:
         import os
@@ -409,7 +396,7 @@ def download_and_process():
             else:
                 http_url = turso_url + '/v2/pipeline'
             
-            # Create tables using TURSO HTTP API format
+            # Create tables with timestamp tracking
             create_requests = [
                 {
                     "type": "execute",
@@ -419,7 +406,8 @@ def download_and_process():
                             name TEXT NOT NULL,
                             total_size INTEGER,
                             torrent_files INTEGER,
-                            anidb_id INTEGER
+                            anidb_id INTEGER,
+                            last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                         )"""
                     }
                 },
@@ -438,6 +426,17 @@ def download_and_process():
                             pack_type TEXT,
                             pack_url_type TEXT,
                             FOREIGN KEY (torrent_id) REFERENCES torrents (id)
+                        )"""
+                    }
+                },
+                {
+                    "type": "execute",
+                    "stmt": {
+                        "sql": """CREATE TABLE IF NOT EXISTS sync_status (
+                            id INTEGER PRIMARY KEY,
+                            last_sync_timestamp INTEGER,
+                            total_torrents INTEGER,
+                            last_torrent_id INTEGER
                         )"""
                     }
                 },
@@ -471,56 +470,107 @@ def download_and_process():
                 result = json.loads(response.read().decode('utf-8'))
                 print("✅ TURSO tables created")
             
-            # Insert data in batches (TURSO HTTP API format)
-            batch_size = 100
-            torrent_count = 0
-            
-            for torrent_id, torrent in final_db.items():
-                # Insert torrent
-                insert_requests = [{
+            # Check what's already uploaded (incremental update)
+            check_requests = [
+                {
                     "type": "execute",
-                    "stmt": {
-                        "sql": "INSERT OR REPLACE INTO torrents (id, name, total_size, torrent_files, anidb_id) VALUES (?, ?, ?, ?, ?)",
-                        "args": [
-                            {"type": "integer", "value": str(torrent_id)},
-                            {"type": "text", "value": torrent['name']},
-                            {"type": "integer", "value": str(torrent.get('total_size', 0))},
-                            {"type": "integer", "value": str(torrent.get('torrent_files', 0))},
-                            {"type": "integer", "value": str(torrent.get('anidb_id', 0))}
-                        ]
-                    }
-                }]
+                    "stmt": {"sql": "SELECT MAX(id) as max_id, COUNT(*) as count FROM torrents"}
+                },
+                {"type": "close"}
+            ]
+            
+            payload = {"requests": check_requests}
+            req = urllib.request.Request(
+                http_url,
+                data=json.dumps(payload).encode('utf-8'),
+                headers={
+                    'Authorization': f'Bearer {turso_token}',
+                    'Content-Type': 'application/json'
+                }
+            )
+            
+            with urllib.request.urlopen(req) as response:
+                result = json.loads(response.read().decode('utf-8'))
                 
-                # Insert subtitle files
-                for sub_file in torrent['subtitle_files']:
-                    for i, afid in enumerate(sub_file['afids']):
-                        lang = sub_file['languages'][i] if i < len(sub_file['languages']) else sub_file['languages'][0]
-                        size = sub_file['sizes'][i] if i < len(sub_file['sizes']) else sub_file['sizes'][0]
-                        
-                        insert_requests.append({
-                            "type": "execute",
-                            "stmt": {
-                                "sql": """INSERT INTO subtitle_files 
-                                         (torrent_id, filename, afid, language, size, episode_number, is_pack, pack_type, pack_url_type) 
-                                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                                "args": [
-                                    {"type": "integer", "value": str(torrent_id)},
-                                    {"type": "text", "value": sub_file['filename']},
-                                    {"type": "integer", "value": str(afid)},
-                                    {"type": "text", "value": lang},
-                                    {"type": "integer", "value": str(size)},
-                                    {"type": "integer", "value": str(sub_file.get('episode_number', 0))} if sub_file.get('episode_number') else {"type": "null"},
-                                    {"type": "integer", "value": "1" if sub_file.get('is_pack', False) else "0"},
-                                    {"type": "text", "value": sub_file.get('pack_type', '')} if sub_file.get('pack_type') else {"type": "null"},
-                                    {"type": "text", "value": sub_file.get('pack_url_type', '')} if sub_file.get('pack_url_type') else {"type": "null"}
-                                ]
-                            }
-                        })
+            # Parse existing data
+            existing_count = 0
+            max_existing_id = 0
+            if result.get('results') and len(result['results']) > 0:
+                rows = result['results'][0].get('response', {}).get('result', {}).get('rows', [])
+                if rows:
+                    max_existing_id = int(rows[0][0]) if rows[0][0] else 0
+                    existing_count = int(rows[0][1]) if rows[0][1] else 0
+            
+            print(f"📊 Found {existing_count} existing torrents, max ID: {max_existing_id}")
+            
+            # Filter to only new/updated torrents
+            torrents_to_upload = {}
+            for torrent_id, torrent in final_db.items():
+                tid = int(torrent_id)
+                if tid > max_existing_id:  # Only upload new torrents
+                    torrents_to_upload[torrent_id] = torrent
+            
+            print(f"🔄 Uploading {len(torrents_to_upload)} new torrents (incremental update)")
+            
+            # Batch upload - 100 torrents per request
+            batch_size = 100
+            torrent_items = list(torrents_to_upload.items())
+            total_batches = (len(torrent_items) + batch_size - 1) // batch_size
+            
+            for batch_num in range(total_batches):
+                start_idx = batch_num * batch_size
+                end_idx = min(start_idx + batch_size, len(torrent_items))
+                batch = torrent_items[start_idx:end_idx]
                 
-                insert_requests.append({"type": "close"})
+                # Build batch request
+                batch_requests = []
                 
-                # Send batch request
-                payload = {"requests": insert_requests}
+                for torrent_id, torrent in batch:
+                    # Insert torrent
+                    batch_requests.append({
+                        "type": "execute",
+                        "stmt": {
+                            "sql": "INSERT OR REPLACE INTO torrents (id, name, total_size, torrent_files, anidb_id) VALUES (?, ?, ?, ?, ?)",
+                            "args": [
+                                {"type": "integer", "value": str(torrent_id)},
+                                {"type": "text", "value": torrent['name']},
+                                {"type": "integer", "value": str(torrent.get('total_size', 0))},
+                                {"type": "integer", "value": str(torrent.get('torrent_files', 0))},
+                                {"type": "integer", "value": str(torrent.get('anidb_id', 0))}
+                            ]
+                        }
+                    })
+                    
+                    # Insert subtitle files for this torrent
+                    for sub_file in torrent['subtitle_files']:
+                        for i, afid in enumerate(sub_file['afids']):
+                            lang = sub_file['languages'][i] if i < len(sub_file['languages']) else sub_file['languages'][0]
+                            size = sub_file['sizes'][i] if i < len(sub_file['sizes']) else sub_file['sizes'][0]
+                            
+                            batch_requests.append({
+                                "type": "execute",
+                                "stmt": {
+                                    "sql": """INSERT INTO subtitle_files 
+                                             (torrent_id, filename, afid, language, size, episode_number, is_pack, pack_type, pack_url_type) 
+                                             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                                    "args": [
+                                        {"type": "integer", "value": str(torrent_id)},
+                                        {"type": "text", "value": sub_file['filename']},
+                                        {"type": "integer", "value": str(afid)},
+                                        {"type": "text", "value": lang},
+                                        {"type": "integer", "value": str(size)},
+                                        {"type": "integer", "value": str(sub_file.get('episode_number', 0))} if sub_file.get('episode_number') else {"type": "null"},
+                                        {"type": "integer", "value": "1" if sub_file.get('is_pack', False) else "0"},
+                                        {"type": "text", "value": sub_file.get('pack_type', '')} if sub_file.get('pack_type') else {"type": "null"},
+                                        {"type": "text", "value": sub_file.get('pack_url_type', '')} if sub_file.get('pack_url_type') else {"type": "null"}
+                                    ]
+                                }
+                            })
+                
+                batch_requests.append({"type": "close"})
+                
+                # Send batch request (100 torrents at once)
+                payload = {"requests": batch_requests}
                 req = urllib.request.Request(
                     http_url,
                     data=json.dumps(payload).encode('utf-8'),
@@ -533,11 +583,43 @@ def download_and_process():
                 with urllib.request.urlopen(req) as response:
                     result = json.loads(response.read().decode('utf-8'))
                 
-                torrent_count += 1
-                if torrent_count % 50 == 0:
-                    print(f"📤 Uploaded {torrent_count} torrents to TURSO...")
+                uploaded_count = (batch_num + 1) * batch_size
+                if uploaded_count > len(torrents_to_upload):
+                    uploaded_count = len(torrents_to_upload)
+                    
+                print(f"📤 Batch {batch_num + 1}/{total_batches}: Uploaded {uploaded_count}/{len(torrents_to_upload)} torrents")
             
-            print(f"✅ TURSO upload complete: {torrent_count} torrents")
+            # Update sync status
+            sync_requests = [
+                {
+                    "type": "execute",
+                    "stmt": {
+                        "sql": "INSERT OR REPLACE INTO sync_status (id, last_sync_timestamp, total_torrents, last_torrent_id) VALUES (1, ?, ?, ?)",
+                        "args": [
+                            {"type": "integer", "value": str(int(__import__('time').time()))},
+                            {"type": "integer", "value": str(len(final_db))},
+                            {"type": "integer", "value": str(max(int(tid) for tid in final_db.keys()))}
+                        ]
+                    }
+                },
+                {"type": "close"}
+            ]
+            
+            payload = {"requests": sync_requests}
+            req = urllib.request.Request(
+                http_url,
+                data=json.dumps(payload).encode('utf-8'),
+                headers={
+                    'Authorization': f'Bearer {turso_token}',
+                    'Content-Type': 'application/json'
+                }
+            )
+            
+            with urllib.request.urlopen(req) as response:
+                result = json.loads(response.read().decode('utf-8'))
+            
+            print(f"✅ TURSO upload complete: {len(torrents_to_upload)} new torrents uploaded")
+            print(f"📊 Total in database: {existing_count + len(torrents_to_upload)} torrents")
             
     except Exception as e:
         print(f"⚠️ TURSO upload failed: {e}")
