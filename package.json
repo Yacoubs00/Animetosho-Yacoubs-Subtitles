@@ -1,5 +1,7 @@
-echo '{
+{
+  "name": "animetosho-attachments-viewer",
+  "version": "1.0.0",
   "dependencies": {
     "@libsql/client": "^0.4.0"
   }
-}' > package.json
+}
