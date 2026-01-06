@@ -423,9 +423,9 @@ def download_and_process():
                     {"type": "execute", "stmt": {"sql": "CREATE INDEX idx_language ON subtitle_files(language)"}},
                     {"type": "execute", "stmt": {"sql": "CREATE INDEX idx_episode ON subtitle_files(episode_number)"}},
                     {"type": "execute", "stmt": {"sql": "INSERT INTO torrents (id, name, total_size, torrent_files, anidb_id) VALUES (?, ?, ?, ?, ?)", "args": [143152, "[SallySubs] Zankyou no Terror - Vol.01 [BD 1080p FLAC]", 2860000000, 2, 10937]}},
-                    {"type": "execute", "stmt": {"sql": "INSERT INTO subtitle_files (torrent_id, filename, afid, language, size, episode_number, is_pack, pack_type, pack_url_type) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", "args": [143152, "Episode 01 Pack", 245050, "eng", 89000, 1, true, "episode_specific", "attachpk"]}},
-                    {"type": "execute", "stmt": {"sql": "INSERT INTO subtitle_files (torrent_id, filename, afid, language, size, episode_number, is_pack, pack_type, pack_url_type) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", "args": [143152, "Episode 02 Pack", 245051, "eng", 91000, 2, true, "episode_specific", "attachpk"]}},
-                    {"type": "execute", "stmt": {"sql": "INSERT INTO subtitle_files (torrent_id, filename, afid, language, size, episode_number, is_pack, pack_type, pack_url_type) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", "args": [143152, "All Attachments (Complete Pack)", 0, "eng", 5500000, null, true, "complete", "torattachpk"]}}
+                    {"type": "execute", "stmt": {"sql": "INSERT INTO subtitle_files (torrent_id, filename, afid, language, size, episode_number, is_pack, pack_type, pack_url_type) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", "args": [143152, "Episode 01 Pack", 245050, "eng", 89000, 1, True, "episode_specific", "attachpk"]}},
+                    {"type": "execute", "stmt": {"sql": "INSERT INTO subtitle_files (torrent_id, filename, afid, language, size, episode_number, is_pack, pack_type, pack_url_type) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", "args": [143152, "Episode 02 Pack", 245051, "eng", 91000, 2, True, "episode_specific", "attachpk"]}},
+                    {"type": "execute", "stmt": {"sql": "INSERT INTO subtitle_files (torrent_id, filename, afid, language, size, episode_number, is_pack, pack_type, pack_url_type) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", "args": [143152, "All Attachments (Complete Pack)", 0, "eng", 5500000, None, True, "complete", "torattachpk"]}}
                 ]
             }
             
