@@ -194,8 +194,13 @@ def download_and_process():
     # Extract comprehensive torrent metadata
     print("🔄 Processing comprehensive torrent metadata...")
     torrent_metadata = {}
+    debug_count = 0
     for line in data['torrents'][1:]:  # Skip header
         parts = line.strip().split('\t')
+        debug_count += 1
+        if debug_count <= 5:  # Debug first 5 lines
+            print(f"🐛 Torrent line {debug_count}: {len(parts)} parts")
+        
         if len(parts) >= 28:
             try:
                 torrent_id = int(parts[0])
@@ -210,8 +215,14 @@ def download_and_process():
                     'torrent_files': torrent_files,
                     'anidb_id': anidb_id
                 }
-            except:
+            except Exception as e:
+                if debug_count <= 5:
+                    print(f"🐛 Parse error line {debug_count}: {e}")
                 continue
+        else:
+            if debug_count <= 5:
+                print(f"🐛 Line {debug_count} too short: {len(parts)} < 28")
+            continue
     
     print(f"📊 Processed metadata for {len(torrent_metadata)} torrents")
 
