@@ -1,3 +1,14 @@
-"engines": {
-  "node": "24.x"
+{
+  "name": "animetosho-subtitles",
+  "version": "1.0.0",
+  "type": "module",
+  "engines": {
+    "node": "24.x"
+  },
+  "dependencies": {
+    "@libsql/client": "^0.14.0"
+  },
+  "scripts": {
+    "build": "mkdir -p public && echo 'API-only deployment' > public/index.html"
+  }
 }
