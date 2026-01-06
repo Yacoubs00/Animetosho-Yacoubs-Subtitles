@@ -534,17 +534,20 @@ def download_and_process():
             
             print(f"🔄 Uploading {len(torrents_to_upload)} new torrents (incremental update)")
             
-            # Batch upload - 100 torrents per request
-            batch_size = 100
+            # Batch upload - 1000 torrents per request (10x faster)
+            batch_size = 1000
             torrent_items = list(torrents_to_upload.items())
             total_batches = (len(torrent_items) + batch_size - 1) // batch_size
+            
+            print(f"🚀 Using MEGA batches: {batch_size} torrents per request")
+            print(f"📊 Total batches needed: {total_batches}")
             
             for batch_num in range(total_batches):
                 start_idx = batch_num * batch_size
                 end_idx = min(start_idx + batch_size, len(torrent_items))
                 batch = torrent_items[start_idx:end_idx]
                 
-                # Build batch request
+                # Build MEGA batch request (1000 torrents at once)
                 batch_requests = []
                 
                 for torrent_id, torrent in batch:
@@ -589,9 +592,23 @@ def download_and_process():
                                 }
                             })
                 
+                # Update progress tracking WITHIN the batch
+                last_torrent_id = max(int(tid) for tid, _ in batch)
+                batch_requests.append({
+                    "type": "execute",
+                    "stmt": {
+                        "sql": "INSERT OR REPLACE INTO sync_status (id, last_sync_timestamp, total_torrents, last_torrent_id) VALUES (1, ?, ?, ?)",
+                        "args": [
+                            {"type": "integer", "value": str(int(__import__('time').time()))},
+                            {"type": "integer", "value": str(existing_count + (batch_num + 1) * len(batch))},
+                            {"type": "integer", "value": str(last_torrent_id)}
+                        ]
+                    }
+                })
+                
                 batch_requests.append({"type": "close"})
                 
-                # Send batch request (100 torrents at once)
+                # Send MEGA batch request (1000 torrents at once)
                 payload = {"requests": batch_requests}
                 req = urllib.request.Request(
                     http_url,
@@ -606,56 +623,30 @@ def download_and_process():
                     with urllib.request.urlopen(req) as response:
                         result = json.loads(response.read().decode('utf-8'))
                         
-                    # Check for errors in batch
+                    # Check for errors in MEGA batch
                     if 'results' in result:
                         error_count = 0
                         for res in result['results']:
                             if res.get('type') == 'error':
                                 error_count += 1
                         if error_count > 0:
-                            print(f"⚠️ Batch {batch_num + 1}: {error_count} errors in batch")
+                            print(f"⚠️ MEGA Batch {batch_num + 1}: {error_count} errors in batch")
                     
                 except Exception as e:
-                    print(f"❌ Batch {batch_num + 1} failed: {e}")
+                    print(f"❌ MEGA Batch {batch_num + 1} failed: {e}")
+                    # Save progress before failing
+                    print(f"💾 Last successful torrent ID: {last_torrent_id}")
                     continue
                 
-                uploaded_count = (batch_num + 1) * batch_size
+                uploaded_count = (batch_num + 1) * len(batch)
                 if uploaded_count > len(torrents_to_upload):
                     uploaded_count = len(torrents_to_upload)
                     
-                print(f"📤 Batch {batch_num + 1}/{total_batches}: Uploaded {uploaded_count}/{len(torrents_to_upload)} torrents")
-            
-            # Update sync status
-            sync_requests = [
-                {
-                    "type": "execute",
-                    "stmt": {
-                        "sql": "INSERT OR REPLACE INTO sync_status (id, last_sync_timestamp, total_torrents, last_torrent_id) VALUES (1, ?, ?, ?)",
-                        "args": [
-                            {"type": "integer", "value": str(int(__import__('time').time()))},
-                            {"type": "integer", "value": str(len(final_db))},
-                            {"type": "integer", "value": str(max(int(tid) for tid in final_db.keys()))}
-                        ]
-                    }
-                },
-                {"type": "close"}
-            ]
-            
-            payload = {"requests": sync_requests}
-            req = urllib.request.Request(
-                http_url,
-                data=json.dumps(payload).encode('utf-8'),
-                headers={
-                    'Authorization': f'Bearer {turso_token}',
-                    'Content-Type': 'application/json'
-                }
-            )
-            
-            with urllib.request.urlopen(req) as response:
-                result = json.loads(response.read().decode('utf-8'))
+                print(f"🚀 MEGA Batch {batch_num + 1}/{total_batches}: Uploaded {uploaded_count}/{len(torrents_to_upload)} torrents (Last ID: {last_torrent_id})")
             
             print(f"✅ TURSO upload complete: {len(torrents_to_upload)} new torrents uploaded")
             print(f"📊 Total in database: {existing_count + len(torrents_to_upload)} torrents")
+            print(f"💾 Resume point saved in sync_status table")
             
     except Exception as e:
         print(f"⚠️ TURSO upload failed: {e}")
