@@ -66,6 +66,30 @@ def extract_episode_number(filename):
             return int(match.group(1))
     return None
 
+def generate_accurate_url(torrent_id, sub_file):
+    """Generate accurate URLs - only 'attach' and 'torattachpk'"""
+    base_url = "https://storage.animetosho.org"
+    
+    if sub_file.get('pack_url_type') == 'torattachpk':
+        # Complete pack - all attachments (like your example)
+        pack_name = urllib.parse.quote(sub_file['pack_name'])
+        return f"{base_url}/torattachpk/{torrent_id}/{pack_name}_attachments.7z"
+    
+    elif sub_file.get('pack_url_type') == 'attach':
+        # Individual file - MOST ACCURATE (like your example)
+        if sub_file['afids'] and len(sub_file['afids']) > 0:
+            afid = sub_file['afids'][0]
+            afid_hex = f"{afid:08x}"  # Convert to 8-digit hex (like 0000a6a3)
+            return f"{base_url}/attach/{afid_hex}/file.xz"
+    
+    # Fallback to individual file
+    if sub_file.get('afids') and len(sub_file['afids']) > 0:
+        afid = sub_file['afids'][0]
+        afid_hex = f"{afid:08x}"
+        return f"{base_url}/attach/{afid_hex}/file.xz"
+    
+    return None
+
 def smart_language_detection(lang, torrent_name, filename=''):
     """Smart 'und' language detection using 40+ patterns"""
     if lang != 'und':
@@ -289,20 +313,25 @@ def download_and_process():
                         'pack_url_type': 'torattachpk'  # Use complete pack URL
                     })
 
-                # Episode-specific packs (attachpk) - SMART SELECTION
+                # Episode-specific files - ACCURATE INDIVIDUAL FILES
                 for episode_num, episode_file in torrent_data['episodes'].items():
                     if episode_num:
-                        subtitle_files_list.append({
-                            'filename': f'Episode {episode_num:02d} Pack',
-                            'afids': episode_file['afids'],
-                            'languages': episode_file['languages'],
-                            'sizes': episode_file['sizes'],
-                            'is_pack': True,
-                            'pack_type': 'episode_specific',
-                            'episode_number': episode_num,
-                            'pack_name': name.replace('[', '').replace(']', '').replace('(', '').replace(')', ''),
-                            'pack_url_type': 'attachpk'  # Use episode-specific pack URL
-                        })
+                        # Create individual episode file entries (most accurate)
+                        for i, afid in enumerate(episode_file['afids']):
+                            lang = episode_file['languages'][i] if i < len(episode_file['languages']) else episode_file['languages'][0]
+                            size = episode_file['sizes'][i] if i < len(episode_file['sizes']) else episode_file['sizes'][0]
+                            
+                            subtitle_files_list.append({
+                                'filename': f'Episode {episode_num:02d} - {lang.upper()}',
+                                'afids': [afid],  # Single afid for accuracy
+                                'languages': [lang],
+                                'sizes': [size],
+                                'is_pack': False,
+                                'pack_type': 'individual',
+                                'episode_number': episode_num,
+                                'pack_url_type': 'attach',  # Individual file URL
+                                'target_episode': episode_num
+                            })
 
                 pack_count += 1
 
@@ -313,7 +342,12 @@ def download_and_process():
                 'torrent_files': metadata['torrent_files'],
                 'total_size': metadata['total_size'],
                 'anidb_id': metadata['anidb_id'],
-                'episodes_available': list(torrent_data['episodes'].keys())  # Episodes index
+                'episodes_available': list(torrent_data['episodes'].keys()),  # Episodes index
+                'url_accuracy': {
+                    'individual_files_count': len([f for f in subtitle_files_list if f.get('pack_url_type') == 'attach']),
+                    'complete_pack_available': any(f.get('pack_url_type') == 'torattachpk' for f in subtitle_files_list),
+                    'accuracy_level': 'high'  # Only using accurate URL types
+                }
             }
 
     print(f"📦 Added packs for {pack_count} torrents")
