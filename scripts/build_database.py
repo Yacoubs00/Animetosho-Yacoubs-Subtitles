@@ -3,6 +3,7 @@
 
 import json
 import urllib.request
+import urllib.parse
 import lzma
 from collections import defaultdict
 import re
