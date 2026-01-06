@@ -198,16 +198,30 @@ def download_and_process():
     for line in data['torrents'][1:]:  # Skip header
         parts = line.strip().split('\t')
         debug_count += 1
-        if debug_count <= 5:  # Debug first 5 lines
-            print(f"🐛 Torrent line {debug_count}: {len(parts)} parts")
+        if debug_count <= 3:  # Debug first 3 lines
+            print(f"🐛 Line {debug_count}: parts[0]='{parts[0]}', parts[1]='{parts[1] if len(parts) > 1 else 'N/A'}', parts[4]='{parts[4] if len(parts) > 4 else 'N/A'}'")
         
         if len(parts) >= 28:
             try:
-                torrent_id = int(parts[0])
-                name = parts[4]
-                total_size = int(parts[5]) if parts[5] else 0
-                torrent_files = int(parts[6]) if parts[6] else 0
-                anidb_id = int(parts[27]) if parts[27] and parts[27] != '\\N' else 0
+                # Try different positions for torrent_id
+                torrent_id = None
+                for i in [0, 1, 2]:
+                    try:
+                        torrent_id = int(parts[i])
+                        break
+                    except:
+                        continue
+                
+                if torrent_id is None:
+                    if debug_count <= 3:
+                        print(f"🐛 No valid torrent_id found in first 3 positions")
+                    continue
+                
+                # Find name field (usually after torrent_id)
+                name = parts[4] if len(parts) > 4 else "Unknown"
+                total_size = int(parts[5]) if len(parts) > 5 and parts[5].isdigit() else 0
+                torrent_files = int(parts[6]) if len(parts) > 6 and parts[6].isdigit() else 0
+                anidb_id = int(parts[27]) if len(parts) > 27 and parts[27].isdigit() else 0
                 
                 torrent_metadata[torrent_id] = {
                     'name': name,
@@ -215,12 +229,16 @@ def download_and_process():
                     'torrent_files': torrent_files,
                     'anidb_id': anidb_id
                 }
+                
+                if debug_count <= 3:
+                    print(f"🐛 Successfully parsed torrent {torrent_id}: {name[:50]}...")
+                    
             except Exception as e:
-                if debug_count <= 5:
+                if debug_count <= 3:
                     print(f"🐛 Parse error line {debug_count}: {e}")
                 continue
         else:
-            if debug_count <= 5:
+            if debug_count <= 3:
                 print(f"🐛 Line {debug_count} too short: {len(parts)} < 28")
             continue
     
