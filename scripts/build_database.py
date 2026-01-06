@@ -496,10 +496,12 @@ def download_and_process():
             existing_count = 0
             max_existing_id = 0
             if result.get('results') and len(result['results']) > 0:
-                rows = result['results'][0].get('response', {}).get('result', {}).get('rows', [])
-                if rows:
-                    max_existing_id = int(rows[0][0]) if rows[0][0] else 0
-                    existing_count = int(rows[0][1]) if rows[0][1] else 0
+                response_data = result['results'][0].get('response', {})
+                if response_data.get('type') == 'execute':
+                    rows = response_data.get('result', {}).get('rows', [])
+                    if rows and len(rows) > 0:
+                        max_existing_id = int(rows[0][0]) if rows[0][0] is not None else 0
+                        existing_count = int(rows[0][1]) if rows[0][1] is not None else 0
             
             print(f"📊 Found {existing_count} existing torrents, max ID: {max_existing_id}")
             
