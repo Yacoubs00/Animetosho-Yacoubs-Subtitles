@@ -284,7 +284,7 @@ def download_and_process():
         
         index['chunks'].append({
             'id': i,
-            'url': f'https://yacoubs00.github.io/Animetosho-Yacoubs-Subtitles/subtitles_{i}.json',
+            'url': f'https://yacoubs00.github.io/Animetosho-Yacoubs-Subtitles/docs/subtitles_{i}.json',
             'min_id': int(chunk_ids[0]),
             'max_id': int(chunk_ids[-1]),
             'count': len(chunk_ids)
