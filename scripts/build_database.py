@@ -470,11 +470,11 @@ def download_and_process():
                 result = json.loads(response.read().decode('utf-8'))
                 print("✅ TURSO tables created")
             
-            # Check what's already uploaded (incremental update)
+            # Check what's already uploaded - FIXED: Don't skip based on MAX(id)
             check_requests = [
                 {
                     "type": "execute",
-                    "stmt": {"sql": "SELECT COALESCE(MAX(id), 0) as max_id, COUNT(*) as count FROM torrents"}
+                    "stmt": {"sql": "SELECT COUNT(*) as count FROM torrents"}
                 },
                 {"type": "close"}
             ]
@@ -492,9 +492,8 @@ def download_and_process():
             with urllib.request.urlopen(req) as response:
                 result = json.loads(response.read().decode('utf-8'))
                 
-            # Parse existing data - handle TURSO response format properly
+            # Parse existing count only - don't filter by ID
             existing_count = 0
-            max_existing_id = 0
             
             try:
                 if result.get('results') and len(result['results']) > 0:
@@ -502,37 +501,25 @@ def download_and_process():
                     if response_data.get('type') == 'execute':
                         result_data = response_data.get('result', {})
                         rows = result_data.get('rows', [])
-                        if rows and len(rows) > 0 and len(rows[0]) >= 2:
-                            # Handle both direct values and wrapped values
-                            max_val = rows[0][0]
-                            count_val = rows[0][1]
+                        if rows and len(rows) > 0:
+                            count_val = rows[0][0]
                             
-                            # Extract actual values (handle string, int, or dict format)
-                            if isinstance(max_val, dict) and 'value' in max_val:
-                                max_existing_id = int(max_val['value']) if max_val['value'] is not None else 0
-                            else:
-                                max_existing_id = int(max_val) if max_val is not None else 0
-                                
                             if isinstance(count_val, dict) and 'value' in count_val:
                                 existing_count = int(count_val['value']) if count_val['value'] is not None else 0
                             else:
                                 existing_count = int(count_val) if count_val is not None else 0
                                 
-                print(f"📊 Found {existing_count} existing torrents, max ID: {max_existing_id}")
+                print(f"📊 Found {existing_count} existing torrents")
                 
             except Exception as e:
                 print(f"🔄 Fresh database (no existing data): {e}")
                 existing_count = 0
-                max_existing_id = 0
             
-            # Filter to only new/updated torrents
-            torrents_to_upload = {}
-            for torrent_id, torrent in final_db.items():
-                tid = int(torrent_id)
-                if tid > max_existing_id:  # Only upload new torrents
-                    torrents_to_upload[torrent_id] = torrent
+            # FIXED: Process ALL torrents with INSERT OR REPLACE (no skipping by ID)
+            torrents_to_upload = final_db  # Upload ALL torrents
             
-            print(f"🔄 Uploading {len(torrents_to_upload)} new torrents (incremental update)")
+            print(f"🔄 Processing ALL {len(torrents_to_upload)} torrents with INSERT OR REPLACE (zero data loss)")
+            print(f"📊 Existing: {existing_count}, Total to process: {len(torrents_to_upload)}")
             
             # Batch upload - 1000 torrents per request (10x faster)
             batch_size = 1000
@@ -592,16 +579,16 @@ def download_and_process():
                                 }
                             })
                 
-                # Update progress tracking WITHIN the batch
-                last_torrent_id = max(int(tid) for tid, _ in batch)
+                # Update progress tracking - use COUNT instead of MAX(id)
+                current_uploaded = existing_count + (batch_num + 1) * len(batch)
                 batch_requests.append({
                     "type": "execute",
                     "stmt": {
                         "sql": "INSERT OR REPLACE INTO sync_status (id, last_sync_timestamp, total_torrents, last_torrent_id) VALUES (1, ?, ?, ?)",
                         "args": [
                             {"type": "integer", "value": str(int(__import__('time').time()))},
-                            {"type": "integer", "value": str(existing_count + (batch_num + 1) * len(batch))},
-                            {"type": "integer", "value": str(last_torrent_id)}
+                            {"type": "integer", "value": str(current_uploaded)},
+                            {"type": "integer", "value": str(len(final_db))}  # Total target count
                         ]
                     }
                 })
@@ -634,15 +621,14 @@ def download_and_process():
                     
                 except Exception as e:
                     print(f"❌ MEGA Batch {batch_num + 1} failed: {e}")
-                    # Save progress before failing
-                    print(f"💾 Last successful torrent ID: {last_torrent_id}")
                     continue
                 
                 uploaded_count = (batch_num + 1) * len(batch)
                 if uploaded_count > len(torrents_to_upload):
                     uploaded_count = len(torrents_to_upload)
                     
-                print(f"🚀 MEGA Batch {batch_num + 1}/{total_batches}: Uploaded {uploaded_count}/{len(torrents_to_upload)} torrents (Last ID: {last_torrent_id})")
+                total_in_db = existing_count + uploaded_count
+                print(f"🚀 MEGA Batch {batch_num + 1}/{total_batches}: {uploaded_count}/{len(torrents_to_upload)} processed, {total_in_db} total in DB")
             
             print(f"✅ TURSO upload complete: {len(torrents_to_upload)} new torrents uploaded")
             print(f"📊 Total in database: {existing_count + len(torrents_to_upload)} torrents")
