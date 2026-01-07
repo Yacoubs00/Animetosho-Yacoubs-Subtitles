@@ -379,41 +379,113 @@ def download_and_process():
     with open('data/subtitles.json', 'w') as f:
         json.dump(database, f, separators=(',', ':'))
 
-    # Upload to Vercel Blob (Simple & Efficient)
-    print("🔄 Uploading to Vercel Blob...")
+    # Upload to TURSO Database (UPSERT approach - no duplicate checking!)
+    print("🔄 Uploading to TURSO Database...")
     try:
+        import libsql_experimental as libsql
         import os
+        import time
         
-        blob_token = os.environ.get('BLOB_READ_WRITE_TOKEN')
+        # TURSO connection
+        turso_url = "libsql://database-fuchsia-xylophone-vercel-icfg-leqyol2toayupqs5t2clktag.aws-us-east-1.turso.io"
+        turso_token = "eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJpYXQiOjE3Njc3ODI2ODMsImlkIjoiMzUxZTVkNjQtMWYzMi00ZGQ1LWE3NTktNDZlOGJmMjdhZTIwIiwicmlkIjoiYTAzMmI2NjktOTAxNy00ZGU1LWIzNmUtMGRiMmE2OTIyNWJiIn0.QushOoxk4gLxLro4Y8iaU0Izh9DYKKlQ3KS8NZYKr75mK01uoj3bEz5o256yoFHIfqoIrbwvFeVPkT2GSk7_AA"
         
-        if not blob_token:
-            print("⚠️ BLOB_READ_WRITE_TOKEN not found, skipping upload")
-        else:
-            # Read the JSON file
-            with open('data/subtitles.json', 'rb') as f:
-                json_data = f.read()
+        conn = libsql.connect(
+            "libsql://database-fuchsia-xylophone-vercel-icfg-leqyol2toayupqs5t2clktag.aws-us-east-1.turso.io",
+            auth_token=turso_token
+        )
+        
+        # Create tables if they don't exist
+        print("📋 Creating database schema...")
+        with open('schema.sql', 'r') as f:
+            schema = f.read()
+        
+        # Execute schema creation
+        for statement in schema.split(';'):
+            if statement.strip():
+                conn.execute(statement.strip())
+        
+        print(f"🔄 Uploading {len(final_db)} torrents using UPSERT...")
+        
+        # UPSERT torrents (no duplicate checking needed!)
+        for torrent_id, torrent_data in final_db.items():
+            conn.execute("""
+                INSERT OR REPLACE INTO torrents 
+                (id, name, languages, episodes_available, total_size, anidb_id, torrent_files, build_timestamp, version)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                int(torrent_id),
+                torrent_data.get('name'),
+                json.dumps(torrent_data.get('languages', [])),
+                json.dumps(torrent_data.get('episodes_available', [])),
+                torrent_data.get('total_size'),
+                torrent_data.get('anidb_id'),
+                json.dumps(torrent_data.get('torrent_files', [])),
+                int(time.time()),
+                '2.3_turso_enhanced'
+            ))
             
-            # Upload to Vercel Blob
-            blob_url = "https://blob.vercel-storage.com/subtitles.json"
-            req = urllib.request.Request(
-                blob_url,
-                data=json_data,
-                method='PUT',
-                headers={
-                    'Authorization': f'Bearer {blob_token}',
-                    'Content-Type': 'application/json',
-                    'x-api-version': '7',
-                    'x-content-type': 'application/json',
-                    'x-add-random-suffix': 'false'
-                }
-            )
-            
-            with urllib.request.urlopen(req) as response:
-                result = json.loads(response.read().decode('utf-8'))
-                print(f"✅ Uploaded to Vercel Blob: {result.get('url', 'success')}")
-            
+            # UPSERT subtitle files
+            for file_data in torrent_data.get('subtitle_files', []):
+                # Generate download URL
+                download_url = None
+                if file_data.get('pack_url_type') == 'torattachpk':
+                    pack_name = urllib.parse.quote(file_data.get('pack_name', ''))
+                    download_url = f"https://storage.animetosho.org/torattachpk/{torrent_id}/{pack_name}_attachments.7z"
+                elif file_data.get('afids') and len(file_data['afids']) > 0:
+                    afid = file_data['afids'][0]
+                    afid_hex = f"{afid:08x}"
+                    download_url = f"https://storage.animetosho.org/attach/{afid_hex}/file.xz"
+                
+                conn.execute("""
+                    INSERT OR REPLACE INTO subtitle_files 
+                    (torrent_id, filename, language, episode_number, size, is_pack, pack_url_type, 
+                     pack_name, afid, afids, target_episode, download_url)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    int(torrent_id),
+                    file_data.get('filename'),
+                    file_data.get('lang'),
+                    file_data.get('episode_number'),
+                    file_data.get('size'),
+                    file_data.get('is_pack', False),
+                    file_data.get('pack_url_type'),
+                    file_data.get('pack_name'),
+                    file_data.get('afids', [None])[0] if file_data.get('afids') else None,
+                    json.dumps(file_data.get('afids', [])),
+                    file_data.get('target_episode'),
+                    download_url
+                ))
+        
+        # UPSERT language index
+        print("🔄 Updating language index...")
+        for lang, torrent_ids in language_index.items():
+            conn.execute("""
+                INSERT OR REPLACE INTO language_index (language, torrent_ids)
+                VALUES (?, ?)
+            """, (lang, json.dumps([str(tid) for tid in torrent_ids])))
+        
+        # Update build metadata
+        conn.execute("""
+            INSERT OR REPLACE INTO build_metadata (key, value, updated_at)
+            VALUES (?, ?, ?)
+        """, ('last_build', json.dumps({
+            'total_torrents': len(final_db),
+            'total_languages': len(language_index),
+            'version': '2.3_turso_enhanced',
+            'size_mb': size_mb
+        }), int(time.time())))
+        
+        conn.commit()
+        conn.close()
+        
+        print(f"✅ Successfully uploaded to TURSO Database!")
+        print(f"📊 {len(final_db)} torrents uploaded using UPSERT (no duplicate checking!)")
+        
     except Exception as e:
-        print(f"⚠️ Vercel Blob upload failed: {e}")
+        print(f"❌ TURSO upload failed: {e}")
+        import traceback
+        traceback.print_exc()
 
     size_mb = len(json.dumps(database, separators=(',', ':'))) / 1024 / 1024
     print(f"✅ Complete Enhanced database built: {len(final_db)} torrents, {len(language_index)} languages")

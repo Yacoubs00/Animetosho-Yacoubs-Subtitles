@@ -1,17 +1,10 @@
-// Vercel Blob Search API
-const BLOB_URL = 'https://kyqw0ojzrgq2c5ex.public.blob.vercel-storage.com/subtitles.json';
+// TURSO Search API - Fast SQL queries with UPSERT benefits
+import { createClient } from '@libsql/client';
 
-let cachedData = null;
-let cacheTime = 0;
-const CACHE_TTL = 300000;
-
-async function loadDatabase() {
-    if (cachedData && Date.now() - cacheTime < CACHE_TTL) return cachedData;
-    const res = await fetch(BLOB_URL);
-    cachedData = await res.json();
-    cacheTime = Date.now();
-    return cachedData;
-}
+const client = createClient({
+    url: 'libsql://database-fuchsia-xylophone-vercel-icfg-leqyol2toayupqs5t2clktag.aws-us-east-1.turso.io',
+    authToken: 'eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJpYXQiOjE3Njc3ODI2ODMsImlkIjoiMzUxZTVkNjQtMWYzMi00ZGQ1LWE3NTktNDZlOGJmMjdhZTIwIiwicmlkIjoiYTAzMmI2NjktOTAxNy00ZGU1LWIzNmUtMGRiMmE2OTIyNWJiIn0.QushOoxk4gLxLro4Y8iaU0Izh9DYKKlQ3KS8NZYKr75mK01uoj3bEz5o256yoFHIfqoIrbwvFeVPkT2GSk7_AA'
+});
 
 function extractEpisode(query) {
     const match = query.match(/(?:episode|ep)\s*(\d{1,3})|(?:^|\s)(\d{1,2})(?:\s|$)/i);
@@ -23,35 +16,48 @@ export default async function handler(req, res) {
     if (!query) return res.status(400).json({ error: 'Query required' });
 
     try {
-        const db = await loadDatabase();
-        const searchTerms = query.toLowerCase().split(/\s+/).filter(t => t.length > 2);
         const episode = extractEpisode(query);
-
-        const results = [];
-        for (const [id, t] of Object.entries(db.torrents)) {
-            if (results.length >= parseInt(limit)) break;
-            
-            // Search in torrent name AND filenames
-            const name = (t.name || '').toLowerCase();
-            const fileNames = (t.subtitle_files || []).map(f => (f.filename || '').toLowerCase()).join(' ');
-            const searchText = name + ' ' + fileNames;
-            
-            if (!searchTerms.every(term => searchText.includes(term))) continue;
-            if (lang !== 'all' && !t.languages?.includes(lang)) continue;
-
-            results.push({
-                id: parseInt(id),
-                name: t.name || t.subtitle_files?.[0]?.filename || `Torrent ${id}`,
-                subtitle_count: t.subtitle_files?.length || 0,
-                languages: t.languages || [],
-                episodes: t.episodes_available || [],
-                episode_match: episode && t.episodes_available?.includes(episode)
-            });
+        
+        // Fast SQL query - no need to load entire database!
+        let sql = `
+            SELECT 
+                t.id,
+                t.name,
+                t.languages,
+                t.episodes_available,
+                COUNT(sf.id) as subtitle_count
+            FROM torrents t
+            LEFT JOIN subtitle_files sf ON t.id = sf.torrent_id
+            WHERE t.name LIKE ?
+        `;
+        
+        const params = [`%${query}%`];
+        
+        // Add language filter if specified
+        if (lang !== 'all') {
+            sql += ` AND (t.languages LIKE ? OR sf.language = ?)`;
+            params.push(`%"${lang}"%`, lang);
         }
+        
+        sql += ` GROUP BY t.id, t.name, t.languages, t.episodes_available ORDER BY subtitle_count DESC LIMIT ?`;
+        params.push(parseInt(limit));
+        
+        const result = await client.execute({ sql, args: params });
+        
+        const results = result.rows.map(row => ({
+            id: row.id,
+            name: row.name,
+            subtitle_count: row.subtitle_count,
+            languages: JSON.parse(row.languages || '[]'),
+            episodes: JSON.parse(row.episodes_available || '[]'),
+            episode_match: episode && JSON.parse(row.episodes_available || '[]').includes(episode)
+        }));
 
         res.json({ results, total: results.length, episode_requested: episode });
     } catch (e) {
-        console.error(e);
-        res.status(500).json({ error: 'Search failed' });
+        console.error('TURSO search error:', e);
+        res.status(500).json({ error: 'Search failed', details: e.message });
     }
 }
+
+export const config = { maxDuration: 60 };
