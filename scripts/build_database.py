@@ -5,6 +5,7 @@ import json
 import urllib.request
 import urllib.parse
 import lzma
+import sys
 from collections import defaultdict
 import re
 import os
