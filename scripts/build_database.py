@@ -86,8 +86,7 @@ def extract_episode_number(filename):
                 return start, True, end, season, False
     
     # SINGLE EPISODE PATTERNS (100+ variations)
-    exclude_nums = {480, 720, 1080, 2160, 1920, 1280, 848, 800, 264, 265, 444}
-    
+    # Single episode patterns
     patterns = [
         # Explicit markers (highest priority)
         r'S\d{1,2}E(\d{1,4})',                              # S01E12
@@ -132,9 +131,20 @@ def extract_episode_number(filename):
                 ep = int(match.group(1))
             except:
                 continue
-            if 1 <= ep <= 9999 and ep not in exclude_nums:
-                if not (1950 <= ep <= 2030):  # Skip years
-                    return ep, False, None, season, False
+            if ep < 1 or ep > 9999:
+                continue
+            # Skip years
+            if 1950 <= ep <= 2030:
+                continue
+            # Skip resolution numbers only if filename contains that resolution marker
+            if ep in {480, 720, 1080, 2160, 1920, 1280, 848, 800}:
+                if re.search(str(ep) + r'p\b', fn, re.I):
+                    continue
+            # Skip x264/x265 only if it's a codec marker (not episode)
+            if ep in {264, 265}:
+                if re.search(r'\bx' + str(ep) + r'\b', fn, re.I) and not re.search(r'[-–]\s*' + str(ep) + r'\s*[\[\(\s]', fn):
+                    continue
+            return ep, False, None, season, False
     
     return None, False, None, None, False
 
