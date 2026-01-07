@@ -86,7 +86,7 @@ def extract_episode_number(filename):
                 return start, True, end, season, False
     
     # SINGLE EPISODE PATTERNS (100+ variations)
-    exclude_nums = {480, 720, 1080, 2160, 1920, 1280, 848, 800, 264, 265, 444, 10}
+    exclude_nums = {480, 720, 1080, 2160, 1920, 1280, 848, 800, 264, 265, 444}
     
     patterns = [
         # Explicit markers (highest priority)
@@ -276,7 +276,12 @@ def download_and_process():
                     torrents[torrent_id]['files'].append(file_entry)
                     
                     if episode_num:
-                        torrents[torrent_id]['episodes'][episode_num] = file_entry
+                        # For ranges, expand to all episodes in range
+                        if is_range and range_end:
+                            for ep in range(episode_num, range_end + 1):
+                                torrents[torrent_id]['episodes'][ep] = file_entry
+                        else:
+                            torrents[torrent_id]['episodes'][episode_num] = file_entry
                     
                     for lang in processed_languages:
                         torrents[torrent_id]['languages'].add(lang)
