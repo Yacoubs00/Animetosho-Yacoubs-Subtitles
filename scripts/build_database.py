@@ -327,25 +327,28 @@ def download_and_process():
             conn.execute('CREATE INDEX IF NOT EXISTS idx_torrent_name ON torrents(name)')
             conn.execute('CREATE INDEX IF NOT EXISTS idx_subtitle_torrent ON subtitle_files(torrent_id)')
             
-            print(f"🔄 Uploading {len(final_db):,} torrents...")
+            print(f"🔄 Uploading {len(final_db):,} torrents (BATCH MODE)...")
             uploaded = 0
             
+            # BATCH INSERT for speed - collect rows then insert in batches
+            torrent_batch = []
+            subtitle_batch = []
+            BATCH_SIZE = 500
+            
             for torrent_id, data in final_db.items():
-                # UPSERT torrent - no read needed!
-                conn.execute('''INSERT OR REPLACE INTO torrents 
-                    (id, name, languages, episodes_available, total_size, anidb_id, torrent_files, build_timestamp, version)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)''',
-                    (int(torrent_id), data.get('name'), json.dumps(data.get('languages', [])),
-                     json.dumps(data.get('episodes_available', [])), data.get('total_size'),
-                     data.get('anidb_id'), json.dumps(data.get('torrent_files', [])),
-                     int(time.time()), '2.3_turso'))
+                # Collect torrent data
+                torrent_batch.append((
+                    int(torrent_id), data.get('name'), json.dumps(data.get('languages', [])),
+                    json.dumps(data.get('episodes_available', [])), data.get('total_size'),
+                    data.get('anidb_id'), json.dumps(data.get('torrent_files', [])),
+                    int(time.time()), '2.3_turso'
+                ))
                 
-                # UPSERT subtitle files
+                # Collect subtitle files
                 for sf in data.get('subtitle_files', []):
                     afids = sf.get('afids', [])
                     afid = afids[0] if afids else None
                     
-                    # Generate download URL
                     if sf.get('pack_url_type') == 'torattachpk':
                         download_url = f"https://storage.animetosho.org/torattachpk/{torrent_id}/{urllib.parse.quote(sf.get('pack_name', ''))}_attachments.7z"
                     elif afid:
@@ -353,19 +356,41 @@ def download_and_process():
                     else:
                         download_url = None
                     
-                    conn.execute('''INSERT OR REPLACE INTO subtitle_files 
-                        (torrent_id, filename, language, episode_number, size, is_pack, 
-                         pack_url_type, pack_name, afid, afids, target_episode, download_url)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
-                        (int(torrent_id), sf.get('filename'), sf.get('lang'),
-                         sf.get('episode_number'), sf.get('size'), sf.get('is_pack', False),
-                         sf.get('pack_url_type'), sf.get('pack_name'), afid,
-                         json.dumps(afids), sf.get('target_episode'), download_url))
+                    subtitle_batch.append((
+                        int(torrent_id), sf.get('filename'), sf.get('lang'),
+                        sf.get('episode_number'), sf.get('size'), sf.get('is_pack', False),
+                        sf.get('pack_url_type'), sf.get('pack_name'), afid,
+                        json.dumps(afids), sf.get('target_episode'), download_url
+                    ))
                 
                 uploaded += 1
-                if uploaded % 10000 == 0:
+                
+                # Flush batches when full
+                if len(torrent_batch) >= BATCH_SIZE:
+                    conn.executemany('''INSERT OR REPLACE INTO torrents 
+                        (id, name, languages, episodes_available, total_size, anidb_id, torrent_files, build_timestamp, version)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)''', torrent_batch)
+                    torrent_batch = []
+                    
+                if len(subtitle_batch) >= BATCH_SIZE * 3:
+                    conn.executemany('''INSERT OR REPLACE INTO subtitle_files 
+                        (torrent_id, filename, language, episode_number, size, is_pack, 
+                         pack_url_type, pack_name, afid, afids, target_episode, download_url)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''', subtitle_batch)
+                    subtitle_batch = []
                     conn.commit()
                     print(f"   Progress: {uploaded:,}/{len(final_db):,} ({uploaded/len(final_db)*100:.1f}%)")
+            
+            # Flush remaining
+            if torrent_batch:
+                conn.executemany('''INSERT OR REPLACE INTO torrents 
+                    (id, name, languages, episodes_available, total_size, anidb_id, torrent_files, build_timestamp, version)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)''', torrent_batch)
+            if subtitle_batch:
+                conn.executemany('''INSERT OR REPLACE INTO subtitle_files 
+                    (torrent_id, filename, language, episode_number, size, is_pack, 
+                     pack_url_type, pack_name, afid, afids, target_episode, download_url)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''', subtitle_batch)
             
             conn.commit()
             conn.close()
