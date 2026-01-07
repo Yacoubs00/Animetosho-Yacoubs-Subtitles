@@ -1,5 +1,5 @@
-// Vercel Blob Kodi API - Chunked Loading
-const INDEX_URL = 'https://kyqw0ojzrgq2c5ex.public.blob.vercel-storage.com/index.json';
+// GitHub Pages Kodi API
+const INDEX_URL = 'https://yacoubs00.github.io/Animetosho-Yacoubs-Subtitles/index.json';
 
 let indexCache = null;
 let chunkCache = {};
