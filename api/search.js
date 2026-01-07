@@ -1,4 +1,4 @@
-// Vercel Blob Search API
+// Vercel Blob Search API - with streaming for large JSON
 const BLOB_URL = 'https://kyqw0ojzrgq2c5ex.public.blob.vercel-storage.com/subtitles.json';
 
 let cachedData = null;
@@ -7,8 +7,12 @@ const CACHE_TTL = 300000;
 
 async function loadDatabase() {
     if (cachedData && Date.now() - cacheTime < CACHE_TTL) return cachedData;
+    
     const res = await fetch(BLOB_URL);
-    cachedData = await res.json();
+    if (!res.ok) throw new Error(`Fetch failed: ${res.status}`);
+    
+    const text = await res.text();
+    cachedData = JSON.parse(text);
     cacheTime = Date.now();
     return cachedData;
 }
@@ -31,7 +35,6 @@ export default async function handler(req, res) {
         for (const [id, t] of Object.entries(db.torrents)) {
             if (results.length >= parseInt(limit)) break;
             
-            // Search in torrent name AND filenames
             const name = (t.name || '').toLowerCase();
             const fileNames = (t.subtitle_files || []).map(f => (f.filename || '').toLowerCase()).join(' ');
             const searchText = name + ' ' + fileNames;
@@ -51,7 +54,10 @@ export default async function handler(req, res) {
 
         res.json({ results, total: results.length, episode_requested: episode });
     } catch (e) {
-        console.error(e);
-        res.status(500).json({ error: 'Search failed' });
+        res.status(500).json({ error: 'Search failed', details: e.message });
     }
 }
+
+export const config = {
+    maxDuration: 60
+};
