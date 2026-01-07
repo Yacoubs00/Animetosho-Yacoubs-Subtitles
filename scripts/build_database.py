@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 # Complete Enhanced Database Builder - All Features Restored
 
+import sys
+sys.stdout.reconfigure(line_buffering=True)  # Force unbuffered output
+
 import json
 import urllib.request
 import urllib.parse
