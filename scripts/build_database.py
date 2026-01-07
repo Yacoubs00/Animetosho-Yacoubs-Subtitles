@@ -37,14 +37,29 @@ DUAL_AUDIO_PATTERNS = {
 }
 
 def extract_episode_number(filename):
+    # Handle range patterns first (Episodes 19-24 → 19)
+    range_match = re.search(r'Episodes?\s*(\d{1,3})\s*[-–]\s*\d{1,3}', filename, re.IGNORECASE)
+    if range_match:
+        return int(range_match.group(1))
+    
     patterns = [
-        r'- (\d{1,2}) \[', r'E(\d{1,2})', r'Ep(\d{1,2})', r'Episode (\d{1,2})',
-        r'(\d{1,2})v\d', r'\[(\d{1,2})\]', r'_(\d{1,2})_', r'\.(\d{1,2})\.'
+        r'[- ](\d{1,3}) ?\[',      # "- 23 [" or " 23["
+        r'[- ](\d{1,3})\(',        # "- 23(" or " 23("
+        r'S\d{1,2}E(\d{1,3})',     # S01E12
+        r'[^a-z]E(\d{1,3})(?:\b|[^0-9])', # E01, E23
+        r'\bEp\.?(\d{1,3})\b',     # Ep01, Ep.23
+        r'\bEpisode (\d{1,3})\b',  # Episode 23
+        r'(\d{1,3})v\d',           # 23v2
+        r'\[(\d{1,3})\]',          # [23]
+        r'_(\d{1,3})_',            # _23_
+        r' (\d{1,3})\.(?:mkv|mp4|avi)', # " 23.mkv"
     ]
     for pattern in patterns:
         match = re.search(pattern, filename, re.IGNORECASE)
         if match:
-            return int(match.group(1))
+            ep = int(match.group(1))
+            if 1 <= ep <= 999:
+                return ep
     return None
 
 def smart_language_detection(lang, torrent_name, filename=''):
