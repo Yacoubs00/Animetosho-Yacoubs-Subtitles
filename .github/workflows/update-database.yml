@@ -17,7 +17,9 @@ jobs:
           python-version: '3.11'
       
       - name: Install Python dependencies
-        run: pip install requests
+        run: |
+          pip install requests
+          pip install libsql-experimental
       
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -30,6 +32,8 @@ jobs:
       - name: Build and Upload to Vercel Blob
         env:
           BLOB_READ_WRITE_TOKEN: ${{ secrets.BLOB_READ_WRITE_TOKEN }}
+          TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL }}
+          TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
         run: |
           mkdir -p data
           python scripts/build_database.py
