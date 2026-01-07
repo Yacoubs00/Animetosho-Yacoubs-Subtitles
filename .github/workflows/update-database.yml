@@ -36,5 +36,5 @@ jobs:
           TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
         run: |
           mkdir -p data
-          python build_fixed.py
+          python scripts/build_database.py
 

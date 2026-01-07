@@ -390,10 +390,7 @@ def download_and_process():
         turso_url = os.getenv('TURSO_DATABASE_URL', "libsql://database-fuchsia-xylophone-vercel-icfg-leqyol2toayupqs5t2clktag.aws-us-east-1.turso.io")
         turso_token = os.getenv('TURSO_AUTH_TOKEN', "eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJpYXQiOjE3Njc3ODI2ODMsImlkIjoiMzUxZTVkNjQtMWYzMi00ZGQ1LWE3NTktNDZlOGJmMjdhZTIwIiwicmlkIjoiYTAzMmI2NjktOTAxNy00ZGU1LWIzNmUtMGRiMmE2OTIyNWJiIn0.QushOoxk4gLxLro4Y8iaU0Izh9DYKKlQ3KS8NZYKr75mK01uoj3bEz5o256yoFHIfqoIrbwvFeVPkT2GSk7_AA")
         
-        conn = libsql.connect(
-            turso_url,
-            auth_token=turso_token
-        )
+        conn = libsql.connect(turso_url, auth_token=turso_token)
         
         # Create tables if they don't exist
         print("📋 Creating database schema...")
@@ -407,8 +404,14 @@ def download_and_process():
         
         print(f"🔄 Uploading {len(final_db)} torrents using UPSERT...")
         
-        # UPSERT torrents (no duplicate checking needed!)
+        uploaded_torrents = 0
+        uploaded_files = 0
+        
+        # UPSERT torrents with progress logging
         for torrent_id, torrent_data in final_db.items():
+            if uploaded_torrents % 10000 == 0:
+                print(f"   Progress: {uploaded_torrents:,}/{len(final_db):,} torrents ({uploaded_torrents/len(final_db)*100:.1f}%)")
+            
             conn.execute("""
                 INSERT OR REPLACE INTO torrents 
                 (id, name, languages, episodes_available, total_size, anidb_id, torrent_files, build_timestamp, version)
@@ -456,6 +459,13 @@ def download_and_process():
                     file_data.get('target_episode'),
                     download_url
                 ))
+                uploaded_files += 1
+            
+            uploaded_torrents += 1
+            
+            # Commit every 1000 torrents to avoid timeouts
+            if uploaded_torrents % 1000 == 0:
+                conn.commit()
         
         # UPSERT language index
         print("🔄 Updating language index...")
@@ -470,17 +480,17 @@ def download_and_process():
             INSERT OR REPLACE INTO build_metadata (key, value, updated_at)
             VALUES (?, ?, ?)
         """, ('last_build', json.dumps({
-            'total_torrents': len(final_db),
+            'total_torrents': uploaded_torrents,
+            'total_files': uploaded_files,
             'total_languages': len(language_index),
-            'version': '2.3_turso_enhanced',
-            'size_mb': size_mb
+            'version': '2.3_turso_enhanced'
         }), int(time.time())))
         
         conn.commit()
         conn.close()
         
-        print(f"✅ Successfully uploaded to TURSO Database!")
-        print(f"📊 {len(final_db)} torrents uploaded using UPSERT (no duplicate checking!)")
+        print(f"✅ TURSO upload successful!")
+        print(f"📊 Uploaded: {uploaded_torrents:,} torrents, {uploaded_files:,} files")
         
     except Exception as e:
         print(f"❌ TURSO upload failed: {e}")
