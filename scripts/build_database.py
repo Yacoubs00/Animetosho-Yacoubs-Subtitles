@@ -287,12 +287,8 @@ def download_and_process():
                     torrents[torrent_id]['files'].append(file_entry)
                     
                     if episode_num:
-                        # For ranges, expand to all episodes in range
-                        if is_range and range_end:
-                            for ep in range(episode_num, range_end + 1):
-                                torrents[torrent_id]['episodes'][ep] = file_entry
-                        else:
-                            torrents[torrent_id]['episodes'][episode_num] = file_entry
+                        # Store episode (ranges stay as single entry with range_end info)
+                        torrents[torrent_id]['episodes'][episode_num] = file_entry
                     
                     for lang in processed_languages:
                         torrents[torrent_id]['languages'].add(lang)
@@ -345,20 +341,6 @@ def download_and_process():
                         'pack_type': 'complete', 'pack_name': name,
                         'pack_url_type': 'torattachpk'
                     })
-
-                for episode_num, episode_file in torrent_data['episodes'].items():
-                    if episode_num:
-                        for i, afid in enumerate(episode_file['afids']):
-                            lang = episode_file['languages'][i] if i < len(episode_file['languages']) else episode_file['languages'][0]
-                            size = episode_file['sizes'][i] if i < len(episode_file['sizes']) else episode_file['sizes'][0]
-                            
-                            subtitle_files_list.append({
-                                'filename': f'Episode {episode_num:02d} - {lang.upper()}',
-                                'afids': [afid], 'languages': [lang], 'sizes': [size],
-                                'is_pack': False, 'pack_type': 'individual',
-                                'episode_number': episode_num, 'pack_url_type': 'attach',
-                                'target_episode': episode_num
-                            })
 
                 pack_count += 1
 
