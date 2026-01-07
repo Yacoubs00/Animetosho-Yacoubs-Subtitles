@@ -1,5 +1,5 @@
-// Vercel Blob Search API - Chunked Loading
-const INDEX_URL = 'https://kyqw0ojzrgq2c5ex.public.blob.vercel-storage.com/index.json';
+// GitHub Pages Search API
+const INDEX_URL = 'https://yacoubs00.github.io/Animetosho-Yacoubs-Subtitles/index.json';
 
 let indexCache = null;
 let chunkCache = {};
@@ -35,7 +35,6 @@ export default async function handler(req, res) {
         const results = [];
         const maxLimit = parseInt(limit);
 
-        // Search through all chunks
         for (const chunk of index.chunks) {
             if (results.length >= maxLimit) break;
             
