@@ -37,30 +37,81 @@ DUAL_AUDIO_PATTERNS = {
 }
 
 def extract_episode_number(filename):
-    # Handle range patterns first (Episodes 19-24 → 19)
-    range_match = re.search(r'Episodes?\s*(\d{1,3})\s*[-–]\s*\d{1,3}', filename, re.IGNORECASE)
-    if range_match:
-        return int(range_match.group(1))
+    """Extract episode number from anime filename. Returns (episode, is_range, range_end, season)"""
     
-    patterns = [
-        r'[- ](\d{1,3}) ?\[',      # "- 23 [" or " 23["
-        r'[- ](\d{1,3})\(',        # "- 23(" or " 23("
-        r'S\d{1,2}E(\d{1,3})',     # S01E12
-        r'[^a-z]E(\d{1,3})(?:\b|[^0-9])', # E01, E23
-        r'\bEp\.?(\d{1,3})\b',     # Ep01, Ep.23
-        r'\bEpisode (\d{1,3})\b',  # Episode 23
-        r'(\d{1,3})v\d',           # 23v2
-        r'\[(\d{1,3})\]',          # [23]
-        r'_(\d{1,3})_',            # _23_
-        r' (\d{1,3})\.(?:mkv|mp4|avi)', # " 23.mkv"
+    # Normalize filename
+    fn = filename.replace('_', ' ')
+    
+    # Skip non-episode files (be specific to avoid false positives)
+    skip_patterns = [
+        r'\b(NCOP|NCED|PV\d*|CM\d*|Menu|Preview|Trailer|Promo)\b',
+        r'^(OST|Soundtrack|CD|Disc)\b',  # Only at start
+        r'/(OST|Soundtrack|Scans?|BK|Jacket|CD)/',  # In path
+        r'\.(jpg|jpeg|png|bmp|txt|nfo|sfv|exe|bat|url|ico|ttf)$',
     ]
-    for pattern in patterns:
-        match = re.search(pattern, filename, re.IGNORECASE)
+    for skip in skip_patterns:
+        if re.search(skip, fn, re.IGNORECASE):
+            return None, False, None, None
+    
+    # Try to extract season first
+    season = None
+    season_match = re.search(r'\bS(\d{1,2})', fn, re.IGNORECASE)
+    if season_match:
+        season = int(season_match.group(1))
+    
+    # RANGE PATTERNS (Episodes 19-24, 01-12, etc.) - return first episode
+    range_patterns = [
+        r'Episodes?\s*(\d{1,4})\s*[-–~]\s*(\d{1,4})',  # Episodes 19-24
+        r'Ep\.?\s*(\d{1,4})\s*[-–~]\s*(\d{1,4})',      # Ep 1-12
+        r'[\s\-](\d{1,4})\s*[-–~]\s*(\d{1,4})\s*[\[\(]', # 01-12 [ or (
+        r'\((\d{1,4})\s*[-–~]\s*(\d{1,4})\)',          # (01-12)
+        r'[\s\-](\d{1,4})\s*[-–~]\s*(\d{1,4})[\s\]]',  # 01-12 space or ]
+    ]
+    for pattern in range_patterns:
+        match = re.search(pattern, fn, re.IGNORECASE)
         if match:
+            start, end = int(match.group(1)), int(match.group(2))
+            if 1 <= start <= 999 and start < end <= 999:
+                return start, True, end, season
+    
+    # SINGLE EPISODE PATTERNS (ordered by specificity)
+    patterns = [
+        # Season+Episode: S01E12, S1E05
+        (r'S\d{1,2}E(\d{1,4})', None),
+        # Explicit episode markers
+        (r'\bEpisodes?\s*(\d{1,4})\b', None),
+        (r'\bEp\.?\s*(\d{1,4})\b', None),
+        (r'\bE(\d{1,4})\b', None),
+        # Bracketed after number: - 23 [, - 05 (
+        (r'[-–]\s*(\d{1,4})\s*[\[\(]', None),
+        (r'[-–]\s*(\d{1,4})\s*v\d', None),  # - 05v2
+        (r'[-–]\s*(\d{1,4})$', None),        # ends with - 05
+        (r'[-–]\s*(\d{1,4})\s', None),       # - 05 space
+        # Space before bracket: " 23["
+        (r'\s(\d{1,4})\s*[\[\(]', None),
+        # Underscored: _23_ or _023_
+        (r'_(\d{1,4})_', None),
+        # Dotted: .23. or Show.23.mkv
+        (r'\.(\d{1,4})\.(?![\dx])', None),
+        # Before extension: " 23.mkv"
+        (r'\s(\d{1,4})\.(?:mkv|mp4|avi)', None),
+        # Standalone number after title: "Show 23 "
+        (r'\s(\d{1,4})\s+[\[\(]', None),
+        # In square brackets alone: [23] - but not hex hashes
+        (r'\[(\d{1,4})\]', lambda m, fn: not re.search(r'[A-Fa-f0-9]{6,}', fn[max(0,m.start()-10):m.end()+10])),
+    ]
+    
+    for pattern, validator in patterns:
+        match = re.search(pattern, fn, re.IGNORECASE)
+        if match:
+            if validator and not validator(match, fn):
+                continue
             ep = int(match.group(1))
-            if 1 <= ep <= 999:
-                return ep
-    return None
+            # Sanity check - skip resolution/year-like numbers
+            if 1 <= ep <= 999 and ep not in [480, 720, 1080, 2160, 1920, 1280, 848, 800, 264, 265]:
+                return ep, False, None, season
+    
+    return None, False, None, None
 
 def smart_language_detection(lang, torrent_name, filename=''):
     if lang != 'und':
@@ -188,12 +239,13 @@ def download_and_process():
                         smart_lang = smart_language_detection(lang, metadata['name'], filename)
                         processed_languages.append(smart_lang)
                     
-                    episode_num = extract_episode_number(filename)
+                    episode_num, is_range, range_end, season = extract_episode_number(filename)
                     
                     file_entry = {
                         'filename': filename, 'afids': sub_data['afids'],
                         'languages': processed_languages, 'sizes': sub_data['sizes'],
-                        'episode_number': episode_num
+                        'episode_number': episode_num, 'is_range': is_range,
+                        'range_end': range_end, 'season': season
                     }
                     
                     torrents[torrent_id]['files'].append(file_entry)
