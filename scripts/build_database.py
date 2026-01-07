@@ -228,10 +228,10 @@ def download_and_process():
         if len(parts) >= 28:
             try:
                 torrent_id = int(parts[0])
-                name = parts[4] if len(parts) > 4 else "Unknown"
-                total_size = int(parts[5]) if len(parts) > 5 and parts[5].isdigit() else 0
-                torrent_files = int(parts[6]) if len(parts) > 6 and parts[6].isdigit() else 0
-                anidb_id = int(parts[27]) if len(parts) > 27 and parts[27].isdigit() else 0
+                name = parts[5] if len(parts) > 5 else "Unknown"
+                total_size = int(parts[10]) if len(parts) > 10 and parts[10].isdigit() else 0
+                torrent_files = int(parts[16]) if len(parts) > 16 and parts[16].isdigit() else 0
+                anidb_id = int(parts[29]) if len(parts) > 29 and parts[29].isdigit() else 0
                 
                 torrent_metadata[torrent_id] = {
                     'name': name, 'total_size': total_size,
