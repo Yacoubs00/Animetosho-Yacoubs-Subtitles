@@ -356,9 +356,11 @@ def download_and_process():
                     else:
                         download_url = None
                     
+                    langs = sf.get('languages', [])
+                    sizes = sf.get('sizes', [])
                     subtitle_batch.append((
-                        int(torrent_id), sf.get('filename'), sf.get('lang'),
-                        sf.get('episode_number'), sf.get('size'), sf.get('is_pack', False),
+                        int(torrent_id), sf.get('filename'), langs[0] if langs else None,
+                        sf.get('episode_number'), sizes[0] if sizes else None, sf.get('is_pack', False),
                         sf.get('pack_url_type'), sf.get('pack_name'), afid,
                         json.dumps(afids), sf.get('target_episode'), download_url
                     ))
