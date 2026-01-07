@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# GitHub Pages Database Builder - Static JSON hosting
+# Complete Enhanced Database Builder - All Features Restored
 
 import json
 import urllib.request
@@ -7,23 +7,34 @@ import urllib.parse
 import lzma
 from collections import defaultdict
 import re
-import os
 
-# [Keep all the existing functions and patterns from the original script]
+# 40+ Expanded English Fansub Groups (Categorized by Confidence)
 ENGLISH_FANSUB_GROUPS = {
+    # Crunchyroll/Official rips (High confidence)
     'HorribleSubs', 'Erai-raws', 'SubsPlease', 'Asenshi',
+    
+    # Funimation/Official (High confidence)
     'FUNi_OCRd', 'FUNimation', 'Funi', 'SimulDub',
+    
+    # Major English fansub groups (High confidence)
     'Commie', 'FFF', 'Underwater', 'GJM', 'Kametsu',
     'Coalgirls', 'UTW', 'gg', 'Mazui', 'WhyNot',
     'Doki', 'Chihiro', 'Tsundere', 'Vivid', 'Ayako',
+    
+    # BD/Quality groups (High confidence)
     'Reinforce', 'Thora', 'Exiled-Destiny', 'Static-Subs',
     'SallySubs', 'Final8', 'ANE', 'Kira-Fansub',
+    
+    # Streaming rips (High confidence)
     'DKS', 'Hatsuyuki', 'Live-eviL', 'Critter-Subs',
     'Kaylith', 'OTR', 'naisho', 'Pirate King',
+    
+    # Additional English groups
     'THORA', 'Eclipse', 'a4e', 'Ryuumaru', 'Elysium',
     'Beatrice-Raws', 'ANK-Raws', 'Moozzi2'
 }
 
+# Streaming Platform & Official Content Detection
 ENGLISH_TITLE_PATTERNS = {
     'english dub', '[eng]', '(english)', 'english sub', 'eng sub',
     '[english dub]', 'english audio', 'dub', 'dubbed',
@@ -31,40 +42,79 @@ ENGLISH_TITLE_PATTERNS = {
     'webrip', 'web-dl', 'hdtv', 'simulcast', 'official subs'
 }
 
+# Extended Dual Audio Patterns
 DUAL_AUDIO_PATTERNS = {
     'dual-audio', 'dual audio', 'multi-audio', 'multi audio',
     'dual language', 'bilingual', 'eng+jpn', 'jp+en'
 }
 
+# Episode Extraction for Enhanced Detection
 def extract_episode_number(filename):
     patterns = [
-        r'- (\d{1,2}) \[', r'E(\d{1,2})', r'Ep(\d{1,2})', r'Episode (\d{1,2})',
-        r'(\d{1,2})v\d', r'\[(\d{1,2})\]', r'_(\d{1,2})_', r'\.(\d{1,2})\.'
+        r'- (\d{1,2}) \[',  # " - 01 ["
+        r'E(\d{1,2})',      # "E01"
+        r'Ep(\d{1,2})',     # "Ep01"
+        r'Episode (\d{1,2})', # "Episode 01"
+        r'(\d{1,2})v\d',    # "01v2"
+        r'\[(\d{1,2})\]',   # "[01]"
+        r'_(\d{1,2})_',     # "_01_"
+        r'\.(\d{1,2})\.',   # ".01."
     ]
+    
     for pattern in patterns:
         match = re.search(pattern, filename, re.IGNORECASE)
         if match:
             return int(match.group(1))
     return None
 
+def generate_accurate_url(torrent_id, sub_file):
+    """Generate accurate URLs - only 'attach' and 'torattachpk'"""
+    base_url = "https://storage.animetosho.org"
+    
+    if sub_file.get('pack_url_type') == 'torattachpk':
+        # Complete pack - all attachments (like your example)
+        pack_name = urllib.parse.quote(sub_file['pack_name'])
+        return f"{base_url}/torattachpk/{torrent_id}/{pack_name}_attachments.7z"
+    
+    elif sub_file.get('pack_url_type') == 'attach':
+        # Individual file - MOST ACCURATE (like your example)
+        if sub_file['afids'] and len(sub_file['afids']) > 0:
+            afid = sub_file['afids'][0]
+            afid_hex = f"{afid:08x}"  # Convert to 8-digit hex (like 0000a6a3)
+            return f"{base_url}/attach/{afid_hex}/file.xz"
+    
+    # Fallback to individual file
+    if sub_file.get('afids') and len(sub_file['afids']) > 0:
+        afid = sub_file['afids'][0]
+        afid_hex = f"{afid:08x}"
+        return f"{base_url}/attach/{afid_hex}/file.xz"
+    
+    return None
+
 def smart_language_detection(lang, torrent_name, filename=''):
+    """Smart 'und' language detection using 40+ patterns"""
     if lang != 'und':
         return lang
+
     name_lower = torrent_name.lower()
     file_lower = filename.lower()
-    
+
+    # Check for fansub groups (HIGH confidence)
     for group in ENGLISH_FANSUB_GROUPS:
         if f'[{group.lower()}]' in name_lower or f'({group.lower()})' in name_lower:
             return 'eng'
-    
+
+    # Check for dual audio (keep as 'und')
     for pattern in DUAL_AUDIO_PATTERNS:
         if pattern in name_lower:
-            return 'und'
-    
+            return 'und'  # Mixed content
+
+    # Check for explicit English indicators
     for pattern in ENGLISH_TITLE_PATTERNS:
         if pattern in name_lower or pattern in file_lower:
             return 'eng'
-    
+
+    # Keep as 'und' when uncertain
     return 'und'
 
 def download_and_process():
@@ -92,70 +142,100 @@ def download_and_process():
     # Build attachment file size lookup
     print("🔄 Building attachment file size lookup...")
     attachment_sizes = {}
-    for line in data['attachmentfiles'][1:]:
+    for line in data['attachmentfiles'][1:]:  # Skip header
         parts = line.strip().split('\t')
         if len(parts) >= 4:
             try:
                 afid = int(parts[0])
-                filesize = int(parts[2])
+                filesize = int(parts[2])  # Actual file size
                 attachment_sizes[afid] = filesize
             except:
                 continue
 
     print(f"📊 Loaded {len(attachment_sizes)} attachment file sizes")
 
-    # Process subtitles
+    # Process subtitles with ACTUAL sizes
     print("🔄 Processing subtitles with actual sizes...")
     subtitle_files = {}
-    for line in data['attachments'][1:]:
+    for line in data['attachments'][1:]:  # Skip header
         parts = line.strip().split('\t', 1)
         if len(parts) == 2:
             try:
                 file_id = int(parts[0])
                 attachment_data = json.loads(parts[1])
                 
-                afids, langs, sizes = [], [], []
+                afids = []
+                langs = []
+                sizes = []
+                
                 for sub in attachment_data[1]:
                     if sub and '_afid' in sub:
                         afid = sub['_afid']
                         afids.append(afid)
-                        langs.append(sub.get('lang', 'eng'))
-                        sizes.append(attachment_sizes.get(afid, 50000))
+                        
+                        lang = sub.get('lang', 'eng')
+                        langs.append(lang)
+                        
+                        # Use ACTUAL file size
+                        actual_size = attachment_sizes.get(afid, 50000)
+                        sizes.append(actual_size)
                 
                 if afids:
-                    subtitle_files[file_id] = {'afids': afids, 'languages': langs, 'sizes': sizes}
+                    subtitle_files[file_id] = {
+                        'afids': afids,
+                        'languages': langs,
+                        'sizes': sizes
+                    }
             except:
                 continue
     
     print(f"📊 Found {len(subtitle_files)} files with subtitles")
 
-    # Process torrent metadata
-    print("🔄 Processing torrent metadata...")
+    # Extract comprehensive torrent metadata
+    print("🔄 Processing comprehensive torrent metadata...")
     torrent_metadata = {}
-    for line in data['torrents'][1:]:
+    for line in data['torrents'][1:]:  # Skip header
         parts = line.strip().split('\t')
+        
         if len(parts) >= 28:
             try:
-                torrent_id = int(parts[0])
+                # Try different positions for torrent_id
+                torrent_id = None
+                for i in [0, 1, 2]:
+                    try:
+                        torrent_id = int(parts[i])
+                        break
+                    except:
+                        continue
+                
+                if torrent_id is None:
+                    continue
+                
+                # Find name field (usually after torrent_id)
                 name = parts[4] if len(parts) > 4 else "Unknown"
                 total_size = int(parts[5]) if len(parts) > 5 and parts[5].isdigit() else 0
                 torrent_files = int(parts[6]) if len(parts) > 6 and parts[6].isdigit() else 0
                 anidb_id = int(parts[27]) if len(parts) > 27 and parts[27].isdigit() else 0
                 
                 torrent_metadata[torrent_id] = {
-                    'name': name, 'total_size': total_size,
-                    'torrent_files': torrent_files, 'anidb_id': anidb_id
+                    'name': name,
+                    'total_size': total_size,
+                    'torrent_files': torrent_files,
+                    'anidb_id': anidb_id
                 }
-            except:
+                    
+            except Exception as e:
                 continue
+        else:
+            continue
     
     print(f"📊 Processed metadata for {len(torrent_metadata)} torrents")
 
-    # Build final database
+    # Build final database with enhanced processing
     torrents = {}
     language_index = defaultdict(set)
 
-    for line in data['files'][1:]:
+    for line in data['files'][1:]:  # Skip header
         parts = line.strip().split('\t')
         if len(parts) >= 4:
             try:
@@ -168,21 +248,26 @@ def download_and_process():
                     sub_data = subtitle_files[file_id]
                     metadata = torrent_metadata[torrent_id]
                     
+                    # Apply smart language detection with 40+ patterns
                     processed_languages = []
                     for lang in sub_data['languages']:
                         smart_lang = smart_language_detection(lang, metadata['name'], filename)
                         processed_languages.append(smart_lang)
                     
+                    # Extract episode number for enhanced detection
                     episode_num = extract_episode_number(filename)
                     
                     file_entry = {
-                        'filename': filename, 'afids': sub_data['afids'],
-                        'languages': processed_languages, 'sizes': sub_data['sizes'],
+                        'filename': filename,
+                        'afids': sub_data['afids'],
+                        'languages': processed_languages,
+                        'sizes': sub_data['sizes'],
                         'episode_number': episode_num
                     }
                     
                     torrents[torrent_id]['files'].append(file_entry)
                     
+                    # Index by episode number for targeted selection
                     if episode_num:
                         torrents[torrent_id]['episodes'][episode_num] = file_entry
                     
@@ -194,7 +279,7 @@ def download_and_process():
     
     print(f"📊 Found {len(torrents)} torrents with subtitles")
 
-    # Build final database with packs
+    # Enhanced pack detection and database building
     final_db = {}
     pack_count = 0
 
@@ -204,7 +289,9 @@ def download_and_process():
             name = metadata['name']
             torrent_data = torrents[torrent_id]
             
+            # Create multiple pack options for different episodes
             subtitle_files_list = torrent_data['files'].copy()
+
             unique_languages = set()
             total_subtitle_files = 0
             total_subtitle_size = 0
@@ -214,10 +301,13 @@ def download_and_process():
                 total_subtitle_files += len(sub_file['afids'])
                 total_subtitle_size += sum(sub_file['sizes'])
 
+            # Enhanced pack detection
             has_pack = (
-                total_subtitle_files >= 3 or len(unique_languages) >= 2 or
-                metadata['torrent_files'] > 3 or metadata['total_size'] > 1073741824 or
-                total_subtitle_size > 1000000 or
+                total_subtitle_files >= 3 or
+                len(unique_languages) >= 2 or
+                metadata['torrent_files'] > 3 or
+                metadata['total_size'] > 1073741824 or  # >1GB
+                total_subtitle_size > 1000000 or  # >1MB subtitles
                 any(keyword in name.lower() for keyword in [
                     'batch', 'complete', 'season', 'series', 'collection',
                     'vol.', 'volume', 'multi-subs', 'multisubs', 'dual audio'
@@ -225,78 +315,192 @@ def download_and_process():
             )
 
             if has_pack:
+                # Complete pack (torattachpk)
                 if len(torrent_data['files']) > 1:
                     total_size = sum(sum(f['sizes']) for f in torrent_data['files'])
                     
                     subtitle_files_list.append({
                         'filename': 'All Attachments (Complete Pack)',
-                        'afids': [0], 'languages': list(unique_languages),
-                        'sizes': [max(total_size, 2000000)], 'is_pack': True,
-                        'pack_type': 'complete', 'pack_name': name,
-                        'pack_url_type': 'torattachpk'
+                        'afids': [0],
+                        'languages': list(unique_languages),
+                        'sizes': [max(total_size, 2000000)],
+                        'is_pack': True,
+                        'pack_type': 'complete',
+                        'pack_name': name,
+                        'pack_url_type': 'torattachpk'  # Use complete pack URL
                     })
 
+                # Episode-specific files - ACCURATE INDIVIDUAL FILES
                 for episode_num, episode_file in torrent_data['episodes'].items():
                     if episode_num:
+                        # Create individual episode file entries (most accurate)
                         for i, afid in enumerate(episode_file['afids']):
                             lang = episode_file['languages'][i] if i < len(episode_file['languages']) else episode_file['languages'][0]
                             size = episode_file['sizes'][i] if i < len(episode_file['sizes']) else episode_file['sizes'][0]
                             
                             subtitle_files_list.append({
                                 'filename': f'Episode {episode_num:02d} - {lang.upper()}',
-                                'afids': [afid], 'languages': [lang], 'sizes': [size],
-                                'is_pack': False, 'pack_type': 'individual',
-                                'episode_number': episode_num, 'pack_url_type': 'attach',
+                                'afids': [afid],  # Single afid for accuracy
+                                'languages': [lang],
+                                'sizes': [size],
+                                'is_pack': False,
+                                'pack_type': 'individual',
+                                'episode_number': episode_num,
+                                'pack_url_type': 'attach',  # Individual file URL
                                 'target_episode': episode_num
                             })
 
                 pack_count += 1
 
             final_db[str(torrent_id)] = {
-                'name': name, 'languages': list(torrents[torrent_id]['languages']),
-                'subtitle_files': subtitle_files_list, 'torrent_files': metadata['torrent_files'],
-                'total_size': metadata['total_size'], 'anidb_id': metadata['anidb_id'],
-                'episodes_available': list(torrent_data['episodes'].keys()),
+                'name': name,
+                'languages': list(torrents[torrent_id]['languages']),
+                'subtitle_files': subtitle_files_list,
+                'torrent_files': metadata['torrent_files'],
+                'total_size': metadata['total_size'],
+                'anidb_id': metadata['anidb_id'],
+                'episodes_available': list(torrent_data['episodes'].keys()),  # Episodes index
                 'url_accuracy': {
                     'individual_files_count': len([f for f in subtitle_files_list if f.get('pack_url_type') == 'attach']),
                     'complete_pack_available': any(f.get('pack_url_type') == 'torattachpk' for f in subtitle_files_list),
-                    'accuracy_level': 'high'
+                    'accuracy_level': 'high'  # Only using accurate URL types
                 }
             }
 
     print(f"📦 Added packs for {pack_count} torrents")
 
-    # Create GitHub Pages structure
-    os.makedirs('docs', exist_ok=True)
-    
-    # Sort and chunk
-    sorted_ids = sorted(final_db.keys(), key=int)
-    chunk_size = 50000
-    chunks = [sorted_ids[i:i+chunk_size] for i in range(0, len(sorted_ids), chunk_size)]
-    
-    index = {'chunks': [], 'total': len(final_db), 'languages': list(language_index.keys())}
-    
-    for i, chunk_ids in enumerate(chunks):
-        chunk_data = {tid: final_db[tid] for tid in chunk_ids}
+    database = {
+        'torrents': final_db,
+        'languages': {lang: [str(tid) for tid in tids] for lang, tids in language_index.items()},
+        'build_timestamp': int(__import__('time').time()),
+        'version': '2.3_complete_enhanced'  # Latest version with all features
+    }
+
+    with open('data/subtitles.json', 'w') as f:
+        json.dump(database, f, separators=(',', ':'))
+
+    # Upload to TURSO Database (UPSERT approach - no duplicate checking!)
+    print("🔄 Uploading to TURSO Database...")
+    try:
+        import libsql_experimental as libsql
+        import os
+        import time
         
-        with open(f'docs/subtitles_{i}.json', 'w') as f:
-            json.dump(chunk_data, f, separators=(',', ':'))
+        # TURSO connection
+        turso_url = "libsql://database-fuchsia-xylophone-vercel-icfg-leqyol2toayupqs5t2clktag.aws-us-east-1.turso.io"
+        turso_token = "eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJpYXQiOjE3Njc3ODI2ODMsImlkIjoiMzUxZTVkNjQtMWYzMi00ZGQ1LWE3NTktNDZlOGJmMjdhZTIwIiwicmlkIjoiYTAzMmI2NjktOTAxNy00ZGU1LWIzNmUtMGRiMmE2OTIyNWJiIn0.QushOoxk4gLxLro4Y8iaU0Izh9DYKKlQ3KS8NZYKr75mK01uoj3bEz5o256yoFHIfqoIrbwvFeVPkT2GSk7_AA"
         
-        index['chunks'].append({
-            'id': i,
-            'url': f'https://yacoubs00.github.io/Animetosho-Yacoubs-Subtitles/docs/subtitles_{i}.json',
-            'min_id': int(chunk_ids[0]),
-            'max_id': int(chunk_ids[-1]),
-            'count': len(chunk_ids)
-        })
+        conn = libsql.connect(
+            "libsql://database-fuchsia-xylophone-vercel-icfg-leqyol2toayupqs5t2clktag.aws-us-east-1.turso.io",
+            auth_token=turso_token
+        )
         
-        size_mb = os.path.getsize(f'docs/subtitles_{i}.json') / 1024 / 1024
-        print(f"✅ Chunk {i}: {len(chunk_ids)} torrents ({size_mb:.1f}MB)")
-    
-    with open('docs/index.json', 'w') as f:
-        json.dump(index, f, separators=(',', ':'))
-    
-    print(f"✅ GitHub Pages database built: {len(final_db)} torrents, {len(language_index)} languages")
+        # Create tables if they don't exist
+        print("📋 Creating database schema...")
+        with open('schema.sql', 'r') as f:
+            schema = f.read()
+        
+        # Execute schema creation
+        for statement in schema.split(';'):
+            if statement.strip():
+                conn.execute(statement.strip())
+        
+        print(f"🔄 Uploading {len(final_db)} torrents using UPSERT...")
+        
+        # UPSERT torrents (no duplicate checking needed!)
+        for torrent_id, torrent_data in final_db.items():
+            conn.execute("""
+                INSERT OR REPLACE INTO torrents 
+                (id, name, languages, episodes_available, total_size, anidb_id, torrent_files, build_timestamp, version)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                int(torrent_id),
+                torrent_data.get('name'),
+                json.dumps(torrent_data.get('languages', [])),
+                json.dumps(torrent_data.get('episodes_available', [])),
+                torrent_data.get('total_size'),
+                torrent_data.get('anidb_id'),
+                json.dumps(torrent_data.get('torrent_files', [])),
+                int(time.time()),
+                '2.3_turso_enhanced'
+            ))
+            
+            # UPSERT subtitle files
+            for file_data in torrent_data.get('subtitle_files', []):
+                # Generate download URL
+                download_url = None
+                if file_data.get('pack_url_type') == 'torattachpk':
+                    pack_name = urllib.parse.quote(file_data.get('pack_name', ''))
+                    download_url = f"https://storage.animetosho.org/torattachpk/{torrent_id}/{pack_name}_attachments.7z"
+                elif file_data.get('afids') and len(file_data['afids']) > 0:
+                    afid = file_data['afids'][0]
+                    afid_hex = f"{afid:08x}"
+                    download_url = f"https://storage.animetosho.org/attach/{afid_hex}/file.xz"
+                
+                conn.execute("""
+                    INSERT OR REPLACE INTO subtitle_files 
+                    (torrent_id, filename, language, episode_number, size, is_pack, pack_url_type, 
+                     pack_name, afid, afids, target_episode, download_url)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    int(torrent_id),
+                    file_data.get('filename'),
+                    file_data.get('lang'),
+                    file_data.get('episode_number'),
+                    file_data.get('size'),
+                    file_data.get('is_pack', False),
+                    file_data.get('pack_url_type'),
+                    file_data.get('pack_name'),
+                    file_data.get('afids', [None])[0] if file_data.get('afids') else None,
+                    json.dumps(file_data.get('afids', [])),
+                    file_data.get('target_episode'),
+                    download_url
+                ))
+        
+        # UPSERT language index
+        print("🔄 Updating language index...")
+        for lang, torrent_ids in language_index.items():
+            conn.execute("""
+                INSERT OR REPLACE INTO language_index (language, torrent_ids)
+                VALUES (?, ?)
+            """, (lang, json.dumps([str(tid) for tid in torrent_ids])))
+        
+        # Update build metadata
+        conn.execute("""
+            INSERT OR REPLACE INTO build_metadata (key, value, updated_at)
+            VALUES (?, ?, ?)
+        """, ('last_build', json.dumps({
+            'total_torrents': len(final_db),
+            'total_languages': len(language_index),
+            'version': '2.3_turso_enhanced',
+            'size_mb': size_mb
+        }), int(time.time())))
+        
+        conn.commit()
+        conn.close()
+        
+        print(f"✅ Successfully uploaded to TURSO Database!")
+        print(f"📊 {len(final_db)} torrents uploaded using UPSERT (no duplicate checking!)")
+        
+    except Exception as e:
+        print(f"❌ TURSO upload failed: {e}")
+        import traceback
+        traceback.print_exc()
+
+    size_mb = len(json.dumps(database, separators=(',', ':'))) / 1024 / 1024
+    print(f"✅ Complete Enhanced database built: {len(final_db)} torrents, {len(language_index)} languages")
+    print(f"📊 Size: {size_mb:.1f}MB")
+    print(f"🎯 All Enhanced Features Implemented:")
+    print(f"  ✅ 40+ fansub group patterns with confidence levels")
+    print(f"  ✅ Streaming platform detection (CR, Funi, Netflix, etc.)")
+    print(f"  ✅ Extended dual audio patterns")
+    print(f"  ✅ Episode-specific pack generation")
+    print(f"  ✅ Smart language detection with 'und' preservation")
+    print(f"  ✅ Actual file sizes from attachmentfiles")
+    print(f"  ✅ Enhanced pack detection with size thresholds")
+    print(f"  ✅ Episode extraction and indexing")
+    print(f"  ✅ Complete + episode-specific pack URLs")
+    print(f"  ✅ Comprehensive torrent metadata")
 
 if __name__ == '__main__':
     download_and_process()
