@@ -300,10 +300,12 @@ def download_and_process():
                 continue
     
     print(f"📊 Found {len(torrents)} torrents with subtitles")
+    sys.stdout.flush()
 
     # Build final database with packs
     final_db = {}
     pack_count = 0
+    processed = 0
 
     for torrent_id in torrents:
         if torrent_id in torrent_metadata:
@@ -370,6 +372,11 @@ def download_and_process():
                     'accuracy_level': 'high'
                 }
             }
+            
+            processed += 1
+            if processed % 50000 == 0:
+                print(f"🔄 Processed {processed:,} torrents...")
+                sys.stdout.flush()
 
     print(f"📦 Added packs for {pack_count} torrents")
 
