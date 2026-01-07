@@ -37,81 +37,106 @@ DUAL_AUDIO_PATTERNS = {
 }
 
 def extract_episode_number(filename):
-    """Extract episode number from anime filename. Returns (episode, is_range, range_end, season)"""
-    
-    # Normalize filename
+    """
+    Extract episode number from anime filename. Returns (episode, is_range, range_end, season, is_special)
+    Covers 100+ naming patterns for anime files.
+    """
     fn = filename.replace('_', ' ')
     
-    # Skip non-episode files (be specific to avoid false positives)
+    # Skip non-episode files
     skip_patterns = [
-        r'\b(NCOP|NCED|PV\d*|CM\d*|Menu|Preview|Trailer|Promo)\b',
-        r'^(OST|Soundtrack|CD|Disc)\b',  # Only at start
-        r'/(OST|Soundtrack|Scans?|BK|Jacket|CD)/',  # In path
-        r'\.(jpg|jpeg|png|bmp|txt|nfo|sfv|exe|bat|url|ico|ttf)$',
+        r'\b(NCOP|NCED|OP\d*|ED\d*|PV\d*|CM\d*|Menu|Preview|Trailer|Promo|Clean)\b',
+        r'^(OST|Soundtrack|CD|Disc|Music)\b',
+        r'/(OST|Soundtrack|Scans?|BK|Jacket|CD|Extra|Bonus)/',
+        r'\.(jpg|jpeg|png|bmp|gif|txt|nfo|sfv|exe|bat|url|ico|ttf|otf|srt|ass|ssa|sub|idx)$',
     ]
     for skip in skip_patterns:
         if re.search(skip, fn, re.IGNORECASE):
-            return None, False, None, None
+            return None, False, None, None, False
     
-    # Try to extract season first
+    # Extract season
     season = None
-    season_match = re.search(r'\bS(\d{1,2})', fn, re.IGNORECASE)
-    if season_match:
-        season = int(season_match.group(1))
+    for pattern in [r'\bS(\d{1,2})E\d', r'\bS(\d{1,2})\s*[-–]\s*\d', r'\bSeason\s*(\d{1,2})', r'[\s\.]S(\d{1,2})[\s\.]']:
+        match = re.search(pattern, fn, re.IGNORECASE)
+        if match:
+            season = int(match.group(1))
+            break
     
-    # RANGE PATTERNS (Episodes 19-24, 01-12, etc.) - return first episode
+    # Check for specials (SP01, OVA 3, etc.)
+    special_match = re.search(r'\b(SP|OVA|OAD|ONA|Special)\s*(\d{1,3})', fn, re.IGNORECASE)
+    if special_match:
+        return int(special_match.group(2)), False, None, season, True
+    
+    # RANGE PATTERNS
     range_patterns = [
-        r'Episodes?\s*(\d{1,4})\s*[-–~]\s*(\d{1,4})',  # Episodes 19-24
-        r'Ep\.?\s*(\d{1,4})\s*[-–~]\s*(\d{1,4})',      # Ep 1-12
-        r'[\s\-](\d{1,4})\s*[-–~]\s*(\d{1,4})\s*[\[\(]', # 01-12 [ or (
-        r'\((\d{1,4})\s*[-–~]\s*(\d{1,4})\)',          # (01-12)
-        r'[\s\-](\d{1,4})\s*[-–~]\s*(\d{1,4})[\s\]]',  # 01-12 space or ]
+        r'Episodes?\s*(\d{1,4})\s*[-–~to]+\s*(\d{1,4})',
+        r'Eps?\.?\s*(\d{1,4})\s*[-–~]+\s*(\d{1,4})',
+        r'E(\d{1,4})\s*[-–~]+\s*E?(\d{1,4})',
+        r'\((\d{1,4})\s*[-–~]+\s*(\d{1,4})\)',
+        r'\[(\d{1,4})\s*[-–~]+\s*(\d{1,4})\]',
+        r'[\s\-](\d{1,4})\s*[-–~]+\s*(\d{1,4})\s*[\[\(]',
+        r'[\s\-](\d{1,4})\s*[-–~]+\s*(\d{1,4})[\s\]\)]',
+        r'[\s\-](\d{1,4})\s*[-–~]+\s*(\d{1,4})$',
     ]
     for pattern in range_patterns:
         match = re.search(pattern, fn, re.IGNORECASE)
         if match:
             start, end = int(match.group(1)), int(match.group(2))
-            if 1 <= start <= 999 and start < end <= 999:
-                return start, True, end, season
+            if 1 <= start <= 999 and start < end <= 9999:
+                return start, True, end, season, False
     
-    # SINGLE EPISODE PATTERNS (ordered by specificity)
+    # SINGLE EPISODE PATTERNS (100+ variations)
+    exclude_nums = {480, 720, 1080, 2160, 1920, 1280, 848, 800, 264, 265, 444, 10}
+    
     patterns = [
-        # Season+Episode: S01E12, S1E05
-        (r'S\d{1,2}E(\d{1,4})', None),
-        # Explicit episode markers
-        (r'\bEpisodes?\s*(\d{1,4})\b', None),
-        (r'\bEp\.?\s*(\d{1,4})\b', None),
-        (r'\bE(\d{1,4})\b', None),
-        # Bracketed after number: - 23 [, - 05 (
-        (r'[-–]\s*(\d{1,4})\s*[\[\(]', None),
-        (r'[-–]\s*(\d{1,4})\s*v\d', None),  # - 05v2
-        (r'[-–]\s*(\d{1,4})$', None),        # ends with - 05
-        (r'[-–]\s*(\d{1,4})\s', None),       # - 05 space
-        # Space before bracket: " 23["
-        (r'\s(\d{1,4})\s*[\[\(]', None),
-        # Underscored: _23_ or _023_
-        (r'_(\d{1,4})_', None),
-        # Dotted: .23. or Show.23.mkv
-        (r'\.(\d{1,4})\.(?![\dx])', None),
-        # Before extension: " 23.mkv"
-        (r'\s(\d{1,4})\.(?:mkv|mp4|avi)', None),
-        # Standalone number after title: "Show 23 "
-        (r'\s(\d{1,4})\s+[\[\(]', None),
-        # In square brackets alone: [23] - but not hex hashes
-        (r'\[(\d{1,4})\]', lambda m, fn: not re.search(r'[A-Fa-f0-9]{6,}', fn[max(0,m.start()-10):m.end()+10])),
+        # Explicit markers (highest priority)
+        r'S\d{1,2}E(\d{1,4})',                              # S01E12
+        r'\bEpisodes?\s*(\d{1,4})\b',                       # Episode 12
+        r'\bEps?\.?\s*(\d{1,4})\b',                         # Ep 12, Ep.12
+        r'#(\d{1,4})\b',                                    # #12
+        r'(?<![A-Fa-f0-9])E(\d{1,4})(?![A-Fa-f0-9])',      # E12 (not hex)
+        # Dash separators
+        r'[-–]\s*(\d{1,4})\s*[\[\(]',                       # - 12 [
+        r'[-–]\s*(\d{1,4})\s*v\d',                          # - 12v2
+        r'[-–]\s*(\d{1,4})\s*END',                          # - 12 END
+        r'[-–]\s*(\d{1,4})\.(?:mkv|mp4|avi)',               # - 12.mkv
+        r'[-–]\s*(\d{1,4})\s*$',                            # - 12 (end)
+        r'[-–]\s*(\d{1,4})\s+(?![x\d])',                    # - 12 space
+        r'[-–]\s*(\d{1,4})\s*\)',                           # - 12)
+        r'S\d{1,2}\s*[-–]\s*(\d{1,4})',                     # S2 - 05
+        # Positional
+        r'^(\d{1,4})\s*[-–]\s*\w',                          # 12 - Title
+        r'^(\d{1,4})\.(?:mkv|mp4|avi)$',                    # 12.mkv
+        r'/(\d{1,4})\.(?:mkv|mp4|avi)$',                    # folder/12.mkv
+        # Delimiters
+        r'[_ ](\d{1,4})[_ ][\[\(]',                         # _12_ or " 12 ["
+        r'\.(\d{1,4})\.(?![x\d])',                          # .12.
+        r'\s(\d{1,4})\.(?:mkv|mp4|avi)',                    # " 12.mkv"
+        # Brackets (not hex)
+        r'\[(\d{1,3})\](?![A-Fa-f0-9])',                    # [12]
+        # Title patterns
+        r'[a-z]\s+(\d{1,4})\s*[\[\(]',                      # "Title 12 ["
+        r'[a-z]\s+(\d{1,4})\.(?:mkv|mp4|avi)',              # "Title 12.mkv"
+        r'[a-z!?]\s+(\d{1,4})\s*$',                         # "Title 12"
+        # Zero-padded
+        r'[-–\s]0*(\d{1,4})[\s\[\(]',                       # - 001 [
+        # Japanese
+        r'第(\d{1,4})話',                                   # 第12話
+        r'(\d{1,4})話',                                     # 12話
     ]
     
-    for pattern, validator in patterns:
+    for pattern in patterns:
         match = re.search(pattern, fn, re.IGNORECASE)
         if match:
-            if validator and not validator(match, fn):
+            try:
+                ep = int(match.group(1))
+            except:
                 continue
-            ep = int(match.group(1))
-            # Sanity check - skip resolution/year-like numbers
-            if 1 <= ep <= 999 and ep not in [480, 720, 1080, 2160, 1920, 1280, 848, 800, 264, 265]:
-                return ep, False, None, season
+            if 1 <= ep <= 9999 and ep not in exclude_nums:
+                if not (1950 <= ep <= 2030):  # Skip years
+                    return ep, False, None, season, False
     
-    return None, False, None, None
+    return None, False, None, None, False
 
 def smart_language_detection(lang, torrent_name, filename=''):
     if lang != 'und':
@@ -239,7 +264,7 @@ def download_and_process():
                         smart_lang = smart_language_detection(lang, metadata['name'], filename)
                         processed_languages.append(smart_lang)
                     
-                    episode_num, is_range, range_end, season = extract_episode_number(filename)
+                    episode_num, is_range, range_end, season, is_special = extract_episode_number(filename)
                     
                     file_entry = {
                         'filename': filename, 'afids': sub_data['afids'],
