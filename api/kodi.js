@@ -1,111 +1,77 @@
-// TURSO-powered Kodi API - Episode-Aware
-import { createClient } from '@libsql/client';
+// Vercel Blob Kodi API
+const BLOB_URL = 'https://kyqw0ojzrgq2c5ex.public.blob.vercel-storage.com/subtitles.json';
 
-const client = createClient({
-    url: process.env.TURSO_DATABASE_URL,
-    authToken: process.env.TURSO_AUTH_TOKEN
-});
+let cachedData = null;
+let cacheTime = 0;
+const CACHE_TTL = 300000;
 
-function extractEpisodeFromQuery(query) {
-    const patterns = [
-        /episode\s+(\d{1,2})/i,
-        /ep\s*(\d{1,2})/i,
-        /\s(\d{1,2})\s/,
-        /-\s*(\d{1,2})\s*$/
-    ];
-    
-    for (const pattern of patterns) {
-        const match = query.match(pattern);
-        if (match) return parseInt(match[1]);
-    }
-    return null;
+async function loadDatabase() {
+    if (cachedData && Date.now() - cacheTime < CACHE_TTL) return cachedData;
+    const res = await fetch(BLOB_URL);
+    cachedData = await res.json();
+    cacheTime = Date.now();
+    return cachedData;
 }
 
-function buildDownloadUrl(file, torrentId) {
-    const baseUrl = 'https://storage.animetosho.org';
-    
+function extractEpisode(query) {
+    const match = query.match(/(?:episode|ep)\s*(\d{1,3})|(?:^|\s)(\d{1,2})(?:\s|$)/i);
+    return match ? parseInt(match[1] || match[2]) : null;
+}
+
+function buildUrl(file, torrentId, torrentName) {
+    const base = 'https://storage.animetosho.org';
     if (file.is_pack) {
-        const cleanName = encodeURIComponent(file.pack_name || `torrent_${torrentId}`);
-        
-        if (file.pack_url_type === 'torattachpk') {
-            return `${baseUrl}/torattachpk/${torrentId}/${cleanName}_attachments.7z`;
-        } else {
-            return `${baseUrl}/attachpk/${torrentId}/${cleanName}_attachments.7z`;
-        }
-    } else {
-        const afidHex = file.afid.toString(16).padStart(8, '0');
-        return `${baseUrl}/attach/${afidHex}/file.xz`;
+        return `${base}/torattachpk/${torrentId}/${encodeURIComponent(torrentName)}_attachments.7z`;
     }
+    const afid = Array.isArray(file.afids) ? file.afids[0] : file.afid;
+    return `${base}/attach/${afid.toString(16).padStart(8, '0')}/file.xz`;
 }
 
 export default async function handler(req, res) {
     const { q: query, lang = 'eng' } = req.query;
-    
-    if (!query) {
-        return res.status(400).json({ error: 'Query parameter required' });
-    }
-    
+    if (!query) return res.status(400).json({ error: 'Query required' });
+
     try {
-        const requestedEpisode = extractEpisodeFromQuery(query);
-        
-        // TURSO SQL Query - Episode-Aware
-        let sql = `
-            SELECT 
-                t.id as torrent_id,
-                t.name as torrent_name,
-                sf.filename,
-                sf.afid,
-                sf.language,
-                sf.size,
-                sf.episode_number,
-                sf.is_pack,
-                sf.pack_type,
-                sf.pack_url_type
-            FROM torrents t
-            JOIN subtitle_files sf ON t.id = sf.torrent_id
-            WHERE t.name LIKE ? AND sf.language = ?
-        `;
-        
-        const params = [`%${query}%`, lang];
-        
-        // Add episode filter if requested
-        if (requestedEpisode) {
-            sql += ` AND (sf.episode_number = ? OR sf.pack_type = 'complete')`;
-            params.push(requestedEpisode);
+        const db = await loadDatabase();
+        const searchTerms = query.toLowerCase().split(/\s+/).filter(t => t.length > 2);
+        const episode = extractEpisode(query);
+
+        const results = [];
+        for (const [id, t] of Object.entries(db.torrents)) {
+            if (results.length >= 20) break;
+            
+            const name = (t.name || '').toLowerCase();
+            const fileNames = (t.subtitle_files || []).map(f => (f.filename || '').toLowerCase()).join(' ');
+            const searchText = name + ' ' + fileNames;
+            
+            if (!searchTerms.every(term => searchText.includes(term))) continue;
+
+            const files = (t.subtitle_files || []).filter(f => {
+                const fileLangs = f.languages || [f.lang];
+                const langMatch = lang === 'all' || fileLangs.includes(lang);
+                const epMatch = !episode || !f.episode_number || f.episode_number === episode || f.is_pack;
+                return langMatch && epMatch;
+            });
+
+            const torrentName = t.name || t.subtitle_files?.[0]?.filename || `Torrent ${id}`;
+            
+            for (const f of files.slice(0, 3)) {
+                results.push({
+                    filename: f.filename,
+                    download: buildUrl(f, id, torrentName),
+                    language: (f.languages || [f.lang])[0] || lang,
+                    rating: f.is_pack ? 5 : 4,
+                    size: Array.isArray(f.sizes) ? f.sizes[0] : f.size,
+                    torrent_name: torrentName,
+                    episode_match: episode && f.episode_number === episode
+                });
+                if (results.length >= 20) break;
+            }
         }
-        
-        sql += ` ORDER BY 
-            CASE WHEN sf.episode_number = ? THEN 0 ELSE 1 END,
-            sf.is_pack DESC,
-            sf.size DESC
-            LIMIT 20
-        `;
-        params.push(requestedEpisode || 0);
-        
-        const result = await client.execute({ sql, args: params });
-        
-        const results = result.rows.map(row => ({
-            filename: row.filename,
-            download: buildDownloadUrl({
-                is_pack: row.is_pack,
-                pack_name: row.torrent_name,
-                pack_url_type: row.pack_url_type,
-                afid: row.afid
-            }, row.torrent_id),
-            sync: false,
-            hearing_imp: false,
-            language: lang,
-            rating: row.is_pack ? 5 : 4,
-            size: row.size,
-            torrent_name: row.torrent_name,
-            episode_match: row.episode_number === requestedEpisode,
-            pack_type: row.pack_type || 'individual'
-        }));
-        
+
         res.json(results);
-        
-    } catch (error) {
-        console.error('TURSO query error:', error);
-        res.status(500).json({ error: 'Database query failed' });
+    } catch (e) {
+        console.error(e);
+        res.status(500).json({ error: 'Query failed' });
     }
 }
