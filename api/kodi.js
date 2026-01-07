@@ -1,5 +1,5 @@
 // GitHub Pages Kodi API
-const INDEX_URL = 'https://yacoubs00.github.io/Animetosho-Yacoubs-Subtitles/index.json';
+const INDEX_URL = 'https://yacoubs00.github.io/Animetosho-Yacoubs-Subtitles/docs/index.json';
 
 let indexCache = null;
 let chunkCache = {};
