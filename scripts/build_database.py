@@ -369,51 +369,75 @@ def download_and_process():
 
     print(f"📦 Added packs for {pack_count} torrents")
 
-    database = {
-        'torrents': final_db,
-        'languages': {lang: [str(tid) for tid in tids] for lang, tids in language_index.items()},
-        'build_timestamp': int(__import__('time').time()),
-        'version': '2.3_complete_enhanced'  # Latest version with all features
-    }
-
-    with open('data/subtitles.json', 'w') as f:
-        json.dump(database, f, separators=(',', ':'))
-
-    # Upload to Vercel Blob (Simple & Efficient)
-    print("🔄 Uploading to Vercel Blob...")
-    try:
-        import os
+    # Upload chunked files to Vercel Blob
+    print("🔄 Uploading chunked files to Vercel Blob...")
+    import os
+    
+    blob_token = os.environ.get('BLOB_READ_WRITE_TOKEN')
+    if not blob_token:
+        print("⚠️ BLOB_READ_WRITE_TOKEN not found, skipping upload")
+    else:
+        # Sort torrent IDs and chunk them
+        sorted_ids = sorted(final_db.keys(), key=int)
+        chunk_size = 50000
+        chunks = [sorted_ids[i:i+chunk_size] for i in range(0, len(sorted_ids), chunk_size)]
         
-        blob_token = os.environ.get('BLOB_READ_WRITE_TOKEN')
+        index = {'chunks': [], 'total': len(final_db), 'languages': list(language_index.keys())}
         
-        if not blob_token:
-            print("⚠️ BLOB_READ_WRITE_TOKEN not found, skipping upload")
-        else:
-            # Read the JSON file
-            with open('data/subtitles.json', 'rb') as f:
-                json_data = f.read()
+        for i, chunk_ids in enumerate(chunks):
+            chunk_data = {tid: final_db[tid] for tid in chunk_ids}
+            chunk_json = json.dumps(chunk_data, separators=(',', ':')).encode('utf-8')
             
-            # Upload to Vercel Blob
-            blob_url = "https://blob.vercel-storage.com/subtitles.json"
+            chunk_name = f"subtitles_{i}.json"
+            blob_url = f"https://blob.vercel-storage.com/{chunk_name}"
+            
             req = urllib.request.Request(
                 blob_url,
-                data=json_data,
+                data=chunk_json,
                 method='PUT',
                 headers={
                     'Authorization': f'Bearer {blob_token}',
                     'Content-Type': 'application/json',
                     'x-api-version': '7',
-                    'x-content-type': 'application/json',
                     'x-add-random-suffix': 'false'
                 }
             )
             
+            try:
+                with urllib.request.urlopen(req) as response:
+                    result = json.loads(response.read().decode('utf-8'))
+                    chunk_url = result.get('url', '')
+                    index['chunks'].append({
+                        'id': i,
+                        'url': chunk_url,
+                        'min_id': int(chunk_ids[0]),
+                        'max_id': int(chunk_ids[-1]),
+                        'count': len(chunk_ids)
+                    })
+                    print(f"✅ Chunk {i}: {len(chunk_ids)} torrents ({len(chunk_json)//1024}KB)")
+            except Exception as e:
+                print(f"❌ Chunk {i} failed: {e}")
+        
+        # Upload index file
+        index_json = json.dumps(index, separators=(',', ':')).encode('utf-8')
+        req = urllib.request.Request(
+            "https://blob.vercel-storage.com/index.json",
+            data=index_json,
+            method='PUT',
+            headers={
+                'Authorization': f'Bearer {blob_token}',
+                'Content-Type': 'application/json',
+                'x-api-version': '7',
+                'x-add-random-suffix': 'false'
+            }
+        )
+        
+        try:
             with urllib.request.urlopen(req) as response:
                 result = json.loads(response.read().decode('utf-8'))
-                print(f"✅ Uploaded to Vercel Blob: {result.get('url', 'success')}")
-            
-    except Exception as e:
-        print(f"⚠️ Vercel Blob upload failed: {e}")
+                print(f"✅ Index uploaded: {result.get('url', 'success')}")
+        except Exception as e:
+            print(f"❌ Index upload failed: {e}")
 
     size_mb = len(json.dumps(database, separators=(',', ':'))) / 1024 / 1024
     print(f"✅ Complete Enhanced database built: {len(final_db)} torrents, {len(language_index)} languages")
