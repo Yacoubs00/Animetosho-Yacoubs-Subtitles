@@ -56,12 +56,14 @@ class handler(BaseHTTPRequestHandler):
                     } for s in subs_result.rows]
                     
                     if subtitle_files:
-                        results.append({
-                            'torrent_id': torrent_id, 'name': torrent_name,
-                            'languages': json.loads(langs) if langs else [],
-                            'episodes_available': eps_list, 'has_episode': has_episode,
-                            'total_size': total_size, 'subtitle_files': subtitle_files
-                        })
+                        # Only include if torrent actually has the episode OR is a pack that contains it
+                        if has_episode or (any(sf['is_pack'] for sf in subtitle_files) and has_episode):
+                            results.append({
+                                'torrent_id': torrent_id, 'name': torrent_name,
+                                'languages': json.loads(langs) if langs else [],
+                                'episodes_available': eps_list, 'has_episode': has_episode,
+                                'total_size': total_size, 'subtitle_files': subtitle_files
+                            })
             else:
                 query = 'SELECT id, name, languages, episodes_available, total_size FROM torrents WHERE name LIKE ? LIMIT 50'
                 result = client.execute(query, (f'%{name}%',))
