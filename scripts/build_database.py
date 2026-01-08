@@ -132,7 +132,7 @@ def extract_episode_number(filename):
                 ep = int(match.group(1))
             except:
                 continue
-            if ep < 1 or ep > 9999:
+            if ep < 0 or ep > 9999:
                 continue
             # Skip years
             if 1950 <= ep <= 2030:
@@ -424,8 +424,19 @@ def download_and_process():
             conn.execute('CREATE INDEX IF NOT EXISTS idx_torrent_name ON torrents(name)')
             conn.execute('CREATE INDEX IF NOT EXISTS idx_subtitle_torrent ON subtitle_files(torrent_id)')
             
-            print(f"🔄 Uploading {len(final_db):,} torrents (BATCH MODE)...")
+            # Get existing torrent IDs to avoid re-uploading (RESUME SUPPORT)
+            print(f"🔍 Checking existing torrents...")
+            existing_ids = set()
+            try:
+                result = conn.execute("SELECT id FROM torrents").fetchall()
+                existing_ids = {row[0] for row in result}
+                print(f"   Found {len(existing_ids):,} existing, will skip them")
+            except:
+                print("   Starting fresh")
+            
+            print(f"🔄 Uploading {len(final_db):,} torrents (BATCH MODE, RESUME FROM {len(existing_ids):,})...")
             uploaded = 0
+            skipped = 0
             
             # BATCH INSERT for speed - collect rows then insert in batches
             torrent_batch = []
@@ -433,6 +444,11 @@ def download_and_process():
             BATCH_SIZE = 500
             
             for torrent_id, data in final_db.items():
+                # SKIP if already exists
+                if int(torrent_id) in existing_ids:
+                    skipped += 1
+                    continue
+                
                 # Collect torrent data
                 torrent_batch.append((
                     int(torrent_id), data.get('name'), json.dumps(data.get('languages', [])),
@@ -466,13 +482,13 @@ def download_and_process():
                 
                 # Flush batches when full
                 if len(torrent_batch) >= BATCH_SIZE:
-                    conn.executemany('''INSERT OR REPLACE INTO torrents 
+                    conn.executemany('''INSERT INTO torrents 
                         (id, name, languages, episodes_available, total_size, anidb_id, torrent_files, build_timestamp, version)
                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)''', torrent_batch)
                     torrent_batch = []
                     
                 if len(subtitle_batch) >= BATCH_SIZE * 3:
-                    conn.executemany('''INSERT OR REPLACE INTO subtitle_files 
+                    conn.executemany('''INSERT INTO subtitle_files 
                         (torrent_id, filename, language, episode_number, size, is_pack, 
                          pack_url_type, pack_name, afid, afids, target_episode, download_url)
                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''', subtitle_batch)
@@ -482,11 +498,11 @@ def download_and_process():
             
             # Flush remaining
             if torrent_batch:
-                conn.executemany('''INSERT OR REPLACE INTO torrents 
+                conn.executemany('''INSERT INTO torrents 
                     (id, name, languages, episodes_available, total_size, anidb_id, torrent_files, build_timestamp, version)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)''', torrent_batch)
             if subtitle_batch:
-                conn.executemany('''INSERT OR REPLACE INTO subtitle_files 
+                conn.executemany('''INSERT INTO subtitle_files 
                     (torrent_id, filename, language, episode_number, size, is_pack, 
                      pack_url_type, pack_name, afid, afids, target_episode, download_url)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''', subtitle_batch)
