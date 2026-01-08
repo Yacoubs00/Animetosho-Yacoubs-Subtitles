@@ -24,7 +24,7 @@ class handler(BaseHTTPRequestHandler):
                 return
             
             client = create_client_sync(
-                url=os.getenv('TURSO_DATABASE_URL'),
+                url=os.getenv('TURSO_DATABASE_URL').replace('libsql://', 'https://'),
                 auth_token=os.getenv('TURSO_AUTH_TOKEN')
             )
             
