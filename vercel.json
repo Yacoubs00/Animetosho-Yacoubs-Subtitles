@@ -11,9 +11,5 @@
       "src": "/api/search",
       "dest": "/api/search.py"
     }
-  ],
-  "env": {
-    "TURSO_DATABASE_URL": "@turso_database_url",
-    "TURSO_AUTH_TOKEN": "@turso_auth_token"
-  }
+  ]
 }
