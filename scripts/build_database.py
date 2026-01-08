@@ -442,7 +442,9 @@ def download_and_process():
             # BATCH INSERT for speed - collect rows then insert in batches
             torrent_batch = []
             subtitle_batch = []
-            BATCH_SIZE = 500
+            BATCH_SIZE = 2000  # Increased from 500
+            last_commit_time = time.time()
+            last_print_time = time.time()
             
             for torrent_id, data in final_db.items():
                 processed += 1
@@ -482,21 +484,32 @@ def download_and_process():
                 
                 uploaded += 1
                 
-                # Flush batches when full
-                if len(torrent_batch) >= BATCH_SIZE:
-                    conn.executemany('''INSERT INTO torrents 
-                        (id, name, languages, episodes_available, total_size, anidb_id, torrent_files, build_timestamp, version)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)''', torrent_batch)
-                    torrent_batch = []
+                # Flush batches when full OR every 30 seconds
+                should_flush = (len(torrent_batch) >= BATCH_SIZE or 
+                               len(subtitle_batch) >= BATCH_SIZE * 3 or
+                               time.time() - last_commit_time > 30)
+                
+                if should_flush and (torrent_batch or subtitle_batch):
+                    if torrent_batch:
+                        conn.executemany('''INSERT INTO torrents 
+                            (id, name, languages, episodes_available, total_size, anidb_id, torrent_files, build_timestamp, version)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)''', torrent_batch)
+                        torrent_batch = []
                     
-                if len(subtitle_batch) >= BATCH_SIZE * 3:
-                    conn.executemany('''INSERT INTO subtitle_files 
-                        (torrent_id, filename, language, episode_number, size, is_pack, 
-                         pack_url_type, pack_name, afid, afids, target_episode, download_url)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''', subtitle_batch)
-                    subtitle_batch = []
+                    if subtitle_batch:
+                        conn.executemany('''INSERT INTO subtitle_files 
+                            (torrent_id, filename, language, episode_number, size, is_pack, 
+                             pack_url_type, pack_name, afid, afids, target_episode, download_url)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''', subtitle_batch)
+                        subtitle_batch = []
+                    
                     conn.commit()
-                    print(f"   Progress: {processed:,}/{len(final_db):,} ({processed/len(final_db)*100:.1f}%) | Uploaded: {uploaded:,} | Skipped: {skipped:,}")
+                    last_commit_time = time.time()
+                    
+                    # Print progress every 60 seconds
+                    if time.time() - last_print_time > 60:
+                        print(f"   Progress: {processed:,}/{len(final_db):,} ({processed/len(final_db)*100:.1f}%) | Uploaded: {uploaded:,} | Skipped: {skipped:,}")
+                        last_print_time = time.time()
             
             # Flush remaining
             if torrent_batch:
