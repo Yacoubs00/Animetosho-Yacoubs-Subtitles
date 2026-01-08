@@ -95,6 +95,8 @@ def extract_episode_number(filename):
         r'\bEps?\.?\s*(\d{1,4})\b',                         # Ep 12, Ep.12
         r'#(\d{1,4})\b',                                    # #12
         r'(?<![A-Fa-f0-9])E(\d{1,4})(?![A-Fa-f0-9])',      # E12 (not hex)
+        # Leading digits (for files like "01 title.mkv", "07 sv13 720.mkv")
+        r'^0*(\d{1,2})\s+\w',                               # 01 title, 07 sv13
         # Dash separators
         r'[-–]\s*(\d{1,4})\s*[\[\(]',                       # - 12 [
         r'[-–]\s*(\d{1,4})\s*v\d',                          # - 12v2
@@ -137,10 +139,9 @@ def extract_episode_number(filename):
             # Skip years
             if 1950 <= ep <= 2030:
                 continue
-            # Skip resolution numbers only if filename contains that resolution marker
+            # Skip resolution numbers (with or without 'p')
             if ep in {480, 720, 1080, 2160, 1920, 1280, 848, 800}:
-                if re.search(str(ep) + r'p\b', fn, re.I):
-                    continue
+                continue
             # Skip x264/x265 only if it's a codec marker (not episode)
             if ep in {264, 265}:
                 if re.search(r'\bx' + str(ep) + r'\b', fn, re.I) and not re.search(r'[-–]\s*' + str(ep) + r'\s*[\[\(\s]', fn):
