@@ -500,7 +500,7 @@ def download_and_process():
                 # Execute batch when full
                 if batch_count >= BATCH_SIZE:
                     batch_sql.append("COMMIT")
-                    conn.execute_batch("; ".join(batch_sql))
+                    conn.executescript("; ".join(batch_sql))
                     batch_sql = ["BEGIN"]
                     batch_count = 0
                     
@@ -512,7 +512,7 @@ def download_and_process():
             # Flush remaining batch
             if batch_count > 0:
                 batch_sql.append("COMMIT")
-                conn.execute_batch("; ".join(batch_sql))
+                conn.executescript("; ".join(batch_sql))
             conn.close()
             print(f"✅ TURSO upload complete: {uploaded:,} torrents")
             
