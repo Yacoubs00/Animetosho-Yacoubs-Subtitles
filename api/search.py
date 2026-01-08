@@ -1,7 +1,7 @@
 import json
 import os
 from urllib.parse import parse_qs
-import libsql_experimental as libsql
+from libsql_client import create_client_sync
 
 def handler(request):
     # Parse query parameters from request
@@ -23,8 +23,8 @@ def handler(request):
         }
     
     # Connect to TURSO
-    conn = libsql.connect(
-        os.getenv('TURSO_DATABASE_URL'),
+    client = create_client_sync(
+        url=os.getenv('TURSO_DATABASE_URL'),
         auth_token=os.getenv('TURSO_AUTH_TOKEN')
     )
     
@@ -53,7 +53,8 @@ def handler(request):
         
         query += ' LIMIT 50'
         
-        torrents = conn.execute(query, params_sql).fetchall()
+        result = client.execute(query, params_sql)
+        torrents = result.rows
         
         for t in torrents:
             torrent_id, torrent_name, langs, eps_available, total_size = t
@@ -71,9 +72,11 @@ def handler(request):
             
             if language:
                 subs_query += ' AND language = ?'
-                subs = conn.execute(subs_query, (torrent_id, ep_num, language)).fetchall()
+                result = client.execute(subs_query, (torrent_id, ep_num, language))
             else:
-                subs = conn.execute(subs_query, (torrent_id, ep_num)).fetchall()
+                result = client.execute(subs_query, (torrent_id, ep_num))
+            
+            subs = result.rows
             
             subtitle_files = []
             for s in subs:
@@ -106,7 +109,8 @@ def handler(request):
             LIMIT 50
         '''
         
-        torrents = conn.execute(query, (f'%{name}%',)).fetchall()
+        result = client.execute(query, (f'%{name}%',))
+        torrents = result.rows
         
         for t in torrents:
             torrent_id, torrent_name, langs, eps_available, total_size = t
