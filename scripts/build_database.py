@@ -439,11 +439,10 @@ def download_and_process():
             skipped = 0
             processed = 0
             
-            # BATCH INSERT for speed - collect rows then insert in batches
-            torrent_batch = []
-            subtitle_batch = []
-            BATCH_SIZE = 2000  # Increased from 500
-            last_commit_time = time.time()
+            # Build SQL batch string instead of using executemany
+            batch_sql = ["BEGIN"]
+            batch_count = 0
+            BATCH_SIZE = 5000  # Larger batches for batch API
             last_print_time = time.time()
             
             for torrent_id, data in final_db.items():
@@ -453,15 +452,16 @@ def download_and_process():
                     skipped += 1
                     continue
                 
-                # Collect torrent data
-                torrent_batch.append((
-                    int(torrent_id), data.get('name'), json.dumps(data.get('languages', [])),
-                    json.dumps(data.get('episodes_available', [])), data.get('total_size'),
-                    data.get('anidb_id'), json.dumps(data.get('torrent_files', [])),
-                    int(time.time()), '2.3_turso'
-                ))
+                # Build INSERT statements as SQL strings
+                name = data.get('name', '').replace("'", "''")
+                langs = json.dumps(data.get('languages', [])).replace("'", "''")
+                eps = json.dumps(data.get('episodes_available', [])).replace("'", "''")
+                tfiles = json.dumps(data.get('torrent_files', [])).replace("'", "''")
                 
-                # Collect subtitle files
+                batch_sql.append(f"""INSERT INTO torrents (id, name, languages, episodes_available, total_size, anidb_id, torrent_files, build_timestamp, version) 
+                    VALUES ({int(torrent_id)}, '{name}', '{langs}', '{eps}', {data.get('total_size', 0)}, {data.get('anidb_id', 0)}, '{tfiles}', {int(time.time())}, '2.3_turso')""")
+                
+                # Add subtitle files
                 for sf in data.get('subtitle_files', []):
                     afids = sf.get('afids', [])
                     afid = afids[0] if afids else None
@@ -473,56 +473,46 @@ def download_and_process():
                     else:
                         download_url = None
                     
+                    filename = sf.get('filename', '').replace("'", "''")
                     langs = sf.get('languages', [])
+                    lang = langs[0].replace("'", "''") if langs else 'NULL'
                     sizes = sf.get('sizes', [])
-                    subtitle_batch.append((
-                        int(torrent_id), sf.get('filename'), langs[0] if langs else None,
-                        sf.get('episode_number'), sizes[0] if sizes else None, sf.get('is_pack', False),
-                        sf.get('pack_url_type'), sf.get('pack_name'), afid,
-                        json.dumps(afids), sf.get('target_episode'), download_url
-                    ))
+                    size = sizes[0] if sizes else 'NULL'
+                    ep = sf.get('episode_number')
+                    ep_str = str(ep) if ep is not None else 'NULL'
+                    is_pack = 1 if sf.get('is_pack', False) else 0
+                    pack_type = sf.get('pack_url_type', '')
+                    pack_type_str = f"'{pack_type}'" if pack_type else 'NULL'
+                    pack_name = sf.get('pack_name', '').replace("'", "''")
+                    pack_name_str = f"'{pack_name}'" if pack_name else 'NULL'
+                    afid_str = str(afid) if afid else 'NULL'
+                    afids_json = json.dumps(afids).replace("'", "''")
+                    target_ep = sf.get('target_episode')
+                    target_ep_str = str(target_ep) if target_ep is not None else 'NULL'
+                    url_str = f"'{download_url}'" if download_url else 'NULL'
+                    
+                    batch_sql.append(f"""INSERT INTO subtitle_files (torrent_id, filename, language, episode_number, size, is_pack, pack_url_type, pack_name, afid, afids, target_episode, download_url) 
+                        VALUES ({int(torrent_id)}, '{filename}', '{lang}', {ep_str}, {size}, {is_pack}, {pack_type_str}, {pack_name_str}, {afid_str}, '{afids_json}', {target_ep_str}, {url_str})""")
                 
                 uploaded += 1
+                batch_count += 1
                 
-                # Flush batches when full OR every 30 seconds
-                should_flush = (len(torrent_batch) >= BATCH_SIZE or 
-                               len(subtitle_batch) >= BATCH_SIZE * 3 or
-                               time.time() - last_commit_time > 30)
-                
-                if should_flush and (torrent_batch or subtitle_batch):
-                    if torrent_batch:
-                        conn.executemany('''INSERT INTO torrents 
-                            (id, name, languages, episodes_available, total_size, anidb_id, torrent_files, build_timestamp, version)
-                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)''', torrent_batch)
-                        torrent_batch = []
-                    
-                    if subtitle_batch:
-                        conn.executemany('''INSERT INTO subtitle_files 
-                            (torrent_id, filename, language, episode_number, size, is_pack, 
-                             pack_url_type, pack_name, afid, afids, target_episode, download_url)
-                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''', subtitle_batch)
-                        subtitle_batch = []
-                    
-                    conn.commit()
-                    last_commit_time = time.time()
+                # Execute batch when full
+                if batch_count >= BATCH_SIZE:
+                    batch_sql.append("COMMIT")
+                    conn.execute_batch("; ".join(batch_sql))
+                    batch_sql = ["BEGIN"]
+                    batch_count = 0
                     
                     # Print progress every 60 seconds
                     if time.time() - last_print_time > 60:
                         print(f"   Progress: {processed:,}/{len(final_db):,} ({processed/len(final_db)*100:.1f}%) | Uploaded: {uploaded:,} | Skipped: {skipped:,}")
                         last_print_time = time.time()
             
-            # Flush remaining
-            if torrent_batch:
-                conn.executemany('''INSERT INTO torrents 
-                    (id, name, languages, episodes_available, total_size, anidb_id, torrent_files, build_timestamp, version)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)''', torrent_batch)
-            if subtitle_batch:
-                conn.executemany('''INSERT INTO subtitle_files 
-                    (torrent_id, filename, language, episode_number, size, is_pack, 
-                     pack_url_type, pack_name, afid, afids, target_episode, download_url)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''', subtitle_batch)
-            
-            conn.commit()
+            # Flush remaining batch
+            if batch_count > 0:
+                batch_sql.append("COMMIT")
+                conn.execute_batch("; ".join(batch_sql))
             conn.close()
             print(f"✅ TURSO upload complete: {uploaded:,} torrents")
             
