@@ -437,6 +437,7 @@ def download_and_process():
             print(f"🔄 Uploading {len(final_db):,} torrents (BATCH MODE, RESUME FROM {len(existing_ids):,})...")
             uploaded = 0
             skipped = 0
+            processed = 0
             
             # BATCH INSERT for speed - collect rows then insert in batches
             torrent_batch = []
@@ -444,6 +445,7 @@ def download_and_process():
             BATCH_SIZE = 500
             
             for torrent_id, data in final_db.items():
+                processed += 1
                 # SKIP if already exists
                 if int(torrent_id) in existing_ids:
                     skipped += 1
@@ -494,7 +496,7 @@ def download_and_process():
                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''', subtitle_batch)
                     subtitle_batch = []
                     conn.commit()
-                    print(f"   Progress: {uploaded:,}/{len(final_db):,} ({uploaded/len(final_db)*100:.1f}%)")
+                    print(f"   Progress: {processed:,}/{len(final_db):,} ({processed/len(final_db)*100:.1f}%) | Uploaded: {uploaded:,} | Skipped: {skipped:,}")
             
             # Flush remaining
             if torrent_batch:
